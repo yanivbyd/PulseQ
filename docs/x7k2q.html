@@ -8,22 +8,32 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #ffffff;
+      --bg: #f5f5f7;
+      --card: #ffffff;
       --fg: #1a1a1a;
-      --muted: #555555;
+      --muted: #666666;
       --border: #e0e0e0;
-      --code-bg: #f4f4f4;
-      --accent: #0066cc;
+      --code-bg: #f0f0f0;
+      --accent: #5b5ef4;
+      --green-bg: #edfaf3;
+      --green-fg: #1a7a45;
+      --red-bg: #fef0f0;
+      --red-fg: #c0392b;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #0f0f0f;
+        --card: #1a1a1a;
         --fg: #e8e8e8;
         --muted: #999999;
         --border: #2a2a2a;
-        --code-bg: #1e1e1e;
-        --accent: #4da3ff;
+        --code-bg: #252525;
+        --accent: #7b7ef8;
+        --green-bg: #0d2a1a;
+        --green-fg: #4ade80;
+        --red-bg: #2a0d0d;
+        --red-fg: #f87171;
       }
     }
 
@@ -33,102 +43,158 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 22px;
       line-height: 1.75;
-      padding: 2rem 1.25rem 4rem;
+      padding: 1.5rem 1rem 4rem;
     }
 
     article {
       max-width: 680px;
       margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
     }
 
-    h1 {
-      font-size: 1.75rem;
-      line-height: 1.25;
-      margin-bottom: 0.5rem;
+    /* ── Header card ── */
+    .header-card {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 16px;
+      padding: 1.5rem 1.25rem 1.25rem;
+    }
+
+    .header-card h1 {
+      font-size: 1.6rem;
+      line-height: 1.2;
       letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
     }
 
     .byline {
-      color: var(--muted);
-      font-size: 0.875rem;
-      margin-bottom: 2.5rem;
+      font-size: 0.75rem;
+      opacity: 0.75;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* ── Section cards ── */
+    .section {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
     }
 
     h2 {
-      font-size: 1.2rem;
-      margin-top: 2.25rem;
-      margin-bottom: 0.6rem;
+      font-size: 1.1rem;
+      font-weight: 700;
       letter-spacing: -0.01em;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    h2 .icon {
+      font-size: 1.2rem;
+      flex-shrink: 0;
     }
 
     h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-top: 1.75rem;
-      margin-bottom: 0.4rem;
-      color: var(--muted);
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-size: 0.8rem;
+      letter-spacing: 0.07em;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      border-radius: 6px;
+      padding: 0.2em 0.6em;
+      margin-top: 1.25rem;
+      margin-bottom: 0.5rem;
     }
 
-    p { margin-bottom: 1rem; }
-
-    hr {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 2rem 0;
-    }
+    p { margin-bottom: 0.9rem; }
+    p:last-child { margin-bottom: 0; }
 
     blockquote {
-      border-left: 3px solid var(--accent);
-      margin: 1.25rem 0;
-      padding: 0.5rem 1rem;
-      color: var(--muted);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
       font-style: italic;
+      font-weight: 500;
     }
 
     ul, ol {
-      margin: 0.75rem 0 1rem 1.5rem;
+      margin: 0.5rem 0 0.9rem 1.4rem;
     }
-
     li { margin-bottom: 0.3rem; }
 
     code {
       background: var(--code-bg);
       padding: 0.15em 0.4em;
-      border-radius: 3px;
-      font-size: 0.875em;
+      border-radius: 4px;
+      font-size: 0.8em;
       font-family: "SF Mono", "Fira Code", "Consolas", monospace;
     }
 
-    strong { font-weight: 600; }
+    strong { font-weight: 700; }
 
+    /* ── Pros / Cons ── */
     .pros-cons {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-      margin: 1rem 0;
+      gap: 0.6rem;
+      margin: 0.75rem 0;
     }
 
-    .pros-cons div {
-      background: var(--code-bg);
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
+    .pros-cons .pros {
+      background: var(--green-bg);
+      border-radius: 10px;
+      padding: 0.7rem 0.9rem;
+    }
+
+    .pros-cons .cons {
+      background: var(--red-bg);
+      border-radius: 10px;
+      padding: 0.7rem 0.9rem;
     }
 
     .pros-cons h4 {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--muted);
+      letter-spacing: 0.06em;
       margin-bottom: 0.4rem;
     }
 
-    .pros-cons ul { margin: 0 0 0 1rem; }
+    .pros-cons .pros h4 { color: var(--green-fg); }
+    .pros-cons .cons h4 { color: var(--red-fg); }
+
+    .pros-cons ul {
+      margin: 0 0 0 1rem;
+      font-size: 0.85em;
+      line-height: 1.5;
+    }
+
+    /* ── Numbered list card ── */
+    ol.layered {
+      margin: 0.5rem 0 0 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    /* ── Tip rows ── */
+    .tip {
+      border-left: 3px solid var(--accent);
+      padding-left: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
 
     @media (max-width: 480px) {
-      h1 { font-size: 1.4rem; }
+      .header-card h1 { font-size: 1.3rem; }
       .pros-cons { grid-template-columns: 1fr; }
     }
   </style>
@@ -136,206 +202,181 @@
 <body>
 <article>
 
-  <h1>How Rate Limiting Works at Scale</h1>
-  <p class="byline">PulseQ Daily Brief</p>
+  <div class="header-card">
+    <h1>How Rate Limiting Works at Scale</h1>
+    <p class="byline">PulseQ Daily Brief</p>
+  </div>
 
-  <p>If you operate any public API or high-traffic service, you eventually face the same problem: some clients send too many requests. Sometimes it's accidental (a bug or retry storm). Sometimes it's abusive (scrapers or bots). And sometimes it's simply success — your product gets popular faster than your backend can handle.</p>
+  <div class="section">
+    <p>If you operate any public API or high-traffic service, you eventually face the same problem: some clients send too many requests. Sometimes it's accidental (a bug or retry storm). Sometimes it's abusive (scrapers or bots). And sometimes it's simply success — your product gets popular faster than your backend can handle.</p>
+    <p>Rate limiting is the safety valve. It controls how many requests a client can make within a given time window, protecting your system's stability while keeping the experience fair for everyone.</p>
+    <p>At small scale, rate limiting looks straightforward. At large scale, it becomes a distributed systems problem involving consistency, latency, fairness, and cost.</p>
+  </div>
 
-  <p>Rate limiting is the safety valve. It controls how many requests a client can make within a given time window, protecting your system's stability while keeping the experience fair for everyone.</p>
+  <div class="section">
+    <h2><span class="icon">🎯</span> The Core Goal</h2>
+    <p>At its heart, rate limiting answers one question:</p>
+    <blockquote>Should this request be allowed right now?</blockquote>
+    <p>To answer that, the system must track:</p>
+    <ul>
+      <li><strong>Who</strong> is making the request (user ID, API key, IP, etc.)</li>
+      <li><strong>How many</strong> requests they've made recently</li>
+      <li><strong>What the policy is</strong> (for example: 100 requests per minute)</li>
+    </ul>
+    <p>Under the limit → allow. Over the limit → reject (HTTP 429). Simple in theory. The complexity appears when traffic is large, distributed, and bursty.</p>
+  </div>
 
-  <p>At small scale, rate limiting looks straightforward. At large scale, it becomes a distributed systems problem involving consistency, latency, fairness, and cost. Let's walk through how it actually works in production systems.</p>
+  <div class="section">
+    <h2><span class="icon">📍</span> Where Rate Limiting Happens</h2>
 
-  <hr>
+    <h3>1 · Client-side (rarely trusted)</h3>
+    <p>The client limits itself. This reduces load but cannot be trusted for enforcement.</p>
 
-  <h2>The Core Goal of Rate Limiting</h2>
-
-  <p>At its heart, rate limiting answers one question:</p>
-
-  <blockquote>Should this request be allowed right now?</blockquote>
-
-  <p>To answer that, the system must track:</p>
-  <ul>
-    <li><strong>Who</strong> is making the request (user ID, API key, IP, etc.)</li>
-    <li><strong>How many</strong> requests they've made recently</li>
-    <li><strong>What the policy is</strong> (for example: 100 requests per minute)</li>
-  </ul>
-
-  <p>If the client is under the limit → allow the request.<br>
-  If over the limit → reject (usually HTTP 429).</p>
-
-  <p>Simple in theory. The complexity appears when traffic is large, distributed, and bursty.</p>
-
-  <hr>
-
-  <h2>Where Rate Limiting Happens</h2>
-
-  <p>Before diving into algorithms, it's important to understand placement. Rate limiting can live in several layers:</p>
-
-  <h3>1. Client-side (rarely trusted)</h3>
-  <p>The client limits itself. This reduces load but cannot be trusted for enforcement.</p>
-
-  <h3>2. API Gateway (most common)</h3>
-  <p>This is the typical production choice. The gateway sits in front of services and enforces limits centrally.</p>
-  <div class="pros-cons">
-    <div>
-      <h4>Pros</h4>
-      <ul>
-        <li>Protects all downstream services</li>
-        <li>Easy to manage policies</li>
-        <li>Reduces duplicate logic</li>
-      </ul>
+    <h3>2 · API Gateway (most common)</h3>
+    <p>The gateway sits in front of services and enforces limits centrally.</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>✅ Pros</h4>
+        <ul>
+          <li>Protects all downstream services</li>
+          <li>Easy to manage policies</li>
+          <li>Reduces duplicate logic</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>❌ Cons</h4>
+        <ul>
+          <li>Can bottleneck if poorly designed</li>
+        </ul>
+      </div>
     </div>
-    <div>
-      <h4>Cons</h4>
-      <ul>
-        <li>Can become a bottleneck if poorly designed</li>
-      </ul>
+
+    <h3>3 · Service-level limiting</h3>
+    <p>Each service enforces its own limits.</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>✅ Pros</h4>
+        <ul>
+          <li>Fine-grained control</li>
+          <li>Local decisions</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>❌ Cons</h4>
+        <ul>
+          <li>Harder to maintain consistency</li>
+          <li>More duplication</li>
+        </ul>
+      </div>
+    </div>
+    <p>At scale, many companies use <strong>gateway-level + service-level defense in depth</strong>.</p>
+  </div>
+
+  <div class="section">
+    <h2><span class="icon">⚡</span> The Three Classic Algorithms</h2>
+
+    <h3>🪟 Fixed Window Counter</h3>
+    <p>Divide time into fixed windows, count requests, reset when the window rolls over. If a user sends 100 requests at 12:00:59 and another 100 at 12:01:01, they send 200 requests in ~2 seconds — yet stay within the rules.</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>✅ Pros</h4>
+        <ul>
+          <li>Very simple</li>
+          <li>Memory efficient</li>
+          <li>Fast to compute</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>❌ Cons</h4>
+        <ul>
+          <li>Burst at window boundaries</li>
+          <li>Unfair traffic spikes</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>📊 Sliding Window Log</h3>
+    <p>Store timestamps of recent requests. On each request: remove entries older than 60 seconds, count remaining, allow or reject.</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>✅ Pros</h4>
+        <ul>
+          <li>Very accurate</li>
+          <li>Smooth enforcement</li>
+          <li>Prevents boundary bursts</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>❌ Cons</h4>
+        <ul>
+          <li>Memory heavy at scale</li>
+          <li>Expensive to maintain</li>
+          <li>Harder to distribute</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>🪣 Token Bucket (Most Popular)</h3>
+    <p>Each client has a bucket of tokens added at a fixed rate. Each request consumes one token. No tokens = rejected. Example: 10 tokens/sec, bucket size 100 — burst up to 100 instantly, sustained at 10/sec.</p>
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>✅ Pros</h4>
+        <ul>
+          <li>Smooth traffic shaping</li>
+          <li>Supports bursts gracefully</li>
+          <li>Memory efficient</li>
+          <li>Distributed-friendly</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>❌ Cons</h4>
+        <ul>
+          <li>More complex to implement</li>
+          <li>Needs time synchronization</li>
+        </ul>
+      </div>
     </div>
   </div>
 
-  <h3>3. Service-level limiting</h3>
-  <p>Each service enforces its own limits.</p>
-  <div class="pros-cons">
-    <div>
-      <h4>Pros</h4>
-      <ul>
-        <li>Fine-grained control</li>
-        <li>Local decisions</li>
-      </ul>
-    </div>
-    <div>
-      <h4>Cons</h4>
-      <ul>
-        <li>Harder to maintain consistency</li>
-        <li>More duplication</li>
-      </ul>
-    </div>
+  <div class="section">
+    <h2><span class="icon">🌐</span> Distributed Challenges</h2>
+
+    <h3>Problem 1 · Multiple Servers</h3>
+    <p>Each node might allow the same user independently, multiplying the limit. Solutions: centralized store (Redis), consistent hashing per user, local + global hybrid limits.</p>
+
+    <h3>Problem 2 · Latency vs Accuracy</h3>
+    <p>Every request may need a read/write to the rate-limit store. Strong consistency = higher latency. Local caching = risk of over-allowing. Large systems often accept small inaccuracies for much better performance.</p>
+
+    <h3>Problem 3 · Hot Keys</h3>
+    <p>Popular API keys become hotspots in Redis. Mitigations: key sharding, local pre-checks, hierarchical limiting, probabilistic limiting.</p>
   </div>
 
-  <p>At scale, many companies use <strong>gateway-level + service-level defense in depth</strong>.</p>
-
-  <hr>
-
-  <h2>The Three Classic Algorithms</h2>
-
-  <p>Most production systems use one of three main approaches.</p>
-
-  <h3>Fixed Window Counter</h3>
-  <p>Divide time into fixed windows (e.g., per minute), count requests within the window, and reset when the window rolls over.</p>
-  <p>If a user sends 100 requests at 12:00:59 and another 100 at 12:01:01, they effectively send 200 requests within ~2 seconds — yet still remain within the rules.</p>
-  <div class="pros-cons">
-    <div>
-      <h4>Pros</h4>
-      <ul>
-        <li>Very simple</li>
-        <li>Memory efficient</li>
-        <li>Fast to compute</li>
-      </ul>
-    </div>
-    <div>
-      <h4>Cons</h4>
-      <ul>
-        <li>Allows burstiness at window boundaries</li>
-        <li>Can create unfair traffic spikes</li>
-      </ul>
-    </div>
+  <div class="section">
+    <h2><span class="icon">🏭</span> What Production Systems Do</h2>
+    <p>Real systems layer their defenses:</p>
+    <ol class="layered">
+      <li><strong>Edge/CDN limiting</strong> — blocks obvious abuse early</li>
+      <li><strong>Gateway token bucket</strong> — primary enforcement</li>
+      <li><strong>Service-level protection</strong> — safety net</li>
+      <li><strong>Adaptive rules</strong> — dynamic tightening during incidents</li>
+    </ol>
+    <p style="margin-top:0.9rem">Additionally: per-user, per-IP, per-endpoint limits, global protection, and burst vs sustained policies.</p>
   </div>
 
-  <h3>Sliding Window Log</h3>
-  <p>Instead of fixed buckets, the system stores timestamps of recent requests and checks how many occurred within the last N seconds. On each request: remove timestamps older than 60 seconds, count remaining, allow or reject.</p>
-  <div class="pros-cons">
-    <div>
-      <h4>Pros</h4>
-      <ul>
-        <li>Very accurate</li>
-        <li>Smooth enforcement</li>
-        <li>Prevents boundary bursts</li>
-      </ul>
-    </div>
-    <div>
-      <h4>Cons</h4>
-      <ul>
-        <li>Memory heavy at scale</li>
-        <li>More expensive to maintain</li>
-        <li>Harder to distribute</li>
-      </ul>
-    </div>
+  <div class="section">
+    <h2><span class="icon">🎨</span> Designing Good Rate Limits</h2>
+    <div class="tip"><p><strong>Be transparent.</strong> Return clear 429 responses with <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code> headers.</p></div>
+    <div class="tip"><p><strong>Allow reasonable bursts.</strong> Users often send traffic in spikes.</p></div>
+    <div class="tip"><p><strong>Differentiate by user tier.</strong> Free vs paid users should have different limits.</p></div>
+    <div class="tip"><p><strong>Monitor and tune.</strong> Rate limits almost always need adjustment in production.</p></div>
   </div>
 
-  <h3>Token Bucket (Most Popular at Scale)</h3>
-  <p>Each client has a bucket of tokens. Tokens are added at a fixed rate (e.g., 10 per second). Each request consumes one token. If no tokens remain, the request is rejected. The bucket has a maximum capacity.</p>
-  <p>Example: fill rate 10 tokens/sec, bucket size 100. The client can burst up to 100 requests instantly, but sustained traffic is limited to 10/sec.</p>
-  <div class="pros-cons">
-    <div>
-      <h4>Pros</h4>
-      <ul>
-        <li>Smooth traffic shaping</li>
-        <li>Supports bursts gracefully</li>
-        <li>Memory efficient</li>
-        <li>Works well in distributed systems</li>
-      </ul>
-    </div>
-    <div>
-      <h4>Cons</h4>
-      <ul>
-        <li>Slightly more complex to implement</li>
-        <li>Requires careful time synchronization</li>
-      </ul>
-    </div>
+  <div class="section">
+    <h2><span class="icon">💡</span> Final Thoughts</h2>
+    <p>Rate limiting starts simple but quickly becomes a distributed systems challenge at scale. The choice of algorithm, storage strategy, and enforcement layer all impact fairness, performance, and reliability.</p>
+    <p>Most modern systems converge on <strong>token bucket–style limiting</strong> backed by a fast centralized store like Redis, combined with layered defenses at the edge and service levels.</p>
+    <p>When implemented well, rate limiting is invisible to good users and highly effective against abuse — exactly what you want from a production-grade system.</p>
   </div>
-
-  <hr>
-
-  <h2>Distributed Rate Limiting Challenges</h2>
-
-  <p>At scale, the real difficulty is not the algorithm — it's distribution.</p>
-
-  <h3>Problem 1: Multiple Servers</h3>
-  <p>If you run many gateway instances, each node might allow the same user independently, effectively multiplying the limit. Common solutions: centralized store (Redis is very common), consistent hashing per user, local + global hybrid limits.</p>
-
-  <h3>Problem 2: Latency vs Accuracy</h3>
-  <p>Every request may need a read/write to the rate-limit store. Strong consistency means higher latency; local caching risks over-allowing. Large systems often accept small inaccuracies for much better performance.</p>
-
-  <h3>Problem 3: Hot Keys</h3>
-  <p>Popular API keys can become hotspots in Redis or other stores. Mitigations include key sharding, local pre-checks, hierarchical rate limiting, and probabilistic limiting.</p>
-
-  <hr>
-
-  <h2>What Production Systems Actually Do</h2>
-
-  <p>In real high-scale systems, rate limiting is usually layered:</p>
-  <ol>
-    <li><strong>Edge/CDN limiting</strong> — blocks obvious abuse early</li>
-    <li><strong>Gateway token bucket</strong> — primary enforcement</li>
-    <li><strong>Service-level protection</strong> — safety net</li>
-    <li><strong>Adaptive rules</strong> — dynamic tightening during incidents</li>
-  </ol>
-
-  <p>Additionally, mature systems include per-user limits, per-IP limits, per-endpoint limits, global system protection, and burst vs sustained policies.</p>
-
-  <hr>
-
-  <h2>Designing Good Rate Limits</h2>
-
-  <p>Good rate limiting is not just technical — it's product design.</p>
-
-  <p><strong>Be transparent.</strong> Return clear 429 responses and include headers like <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, and <code>Retry-After</code>.</p>
-
-  <p><strong>Allow reasonable bursts.</strong> Users often send traffic in spikes.</p>
-
-  <p><strong>Differentiate by user tier.</strong> Free vs paid users should have different limits.</p>
-
-  <p><strong>Monitor and tune.</strong> Rate limits almost always need adjustment in production.</p>
-
-  <hr>
-
-  <h2>Final Thoughts</h2>
-
-  <p>Rate limiting starts simple but quickly becomes a distributed systems challenge at scale. The choice of algorithm, storage strategy, and enforcement layer all impact fairness, performance, and reliability.</p>
-
-  <p>Most modern systems converge on token bucket–style limiting backed by a fast centralized store like Redis, combined with layered defenses at the edge and service levels.</p>
-
-  <p>When implemented well, rate limiting is invisible to good users and highly effective against abuse — exactly what you want from a production-grade system.</p>
 
 </article>
 </body>
