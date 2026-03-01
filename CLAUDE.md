@@ -18,6 +18,13 @@ When the user is ready to commit, they will ask for a commit message suggestion.
 
 This is PulseQ, an autonomous modular AI system that delivers daily personalized technology and AI news briefs. See README.md for project overview and general_instructions for full specifications.
 
+## Execution Philosophy
+
+- **Move fast** — prefer simple, working solutions over elaborate ones. Avoid over-engineering.
+- **Avoid one-way-door decisions** — a one-way-door decision is one that is costly or impossible to reverse and constrains the entire architecture (e.g. choosing a hosting platform, URL schema, database structure, framework). Only the user defines what counts as a one-way-door decision.
+- **Flag before acting** — whenever a task requires a choice that could be a one-way-door, raise it in the "Questions for Clarification" section of the relevant spec rather than making the choice unilaterally. Do not implement until the user has answered.
+- **Two-way doors are fine** — reversible decisions (file layout, variable names, minor UI choices) can be made independently without asking.
+
 ## Development Guidelines
 
 **Testing Requirements:**
