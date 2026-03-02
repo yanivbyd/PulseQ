@@ -49,6 +49,12 @@ class WriterStack(Stack):
             description="OpenAI API key",
         )
 
+        ifttt_secret = sm.Secret.from_secret_name_v2(
+            self,
+            "IftttKey",
+            "pulseq/ifttt-key",
+        )
+
         # ── Lambda ──────────────────────────────────────────────────────────
         writer_fn = _lambda.Function(
             self,
@@ -72,6 +78,7 @@ class WriterStack(Stack):
                 "INPUT_BUCKET": input_bucket.bucket_name,
                 "OUTPUT_BUCKET": output_bucket.bucket_name,
                 "SECRET_NAME": secret.secret_name,
+                "IFTTT_SECRET_NAME": ifttt_secret.secret_name,
             },
         )
 
@@ -79,6 +86,7 @@ class WriterStack(Stack):
         input_bucket.grant_read(writer_fn)
         output_bucket.grant_put(writer_fn)
         secret.grant_read(writer_fn)
+        ifttt_secret.grant_read(writer_fn)
 
         # ── API Gateway HTTP API ─────────────────────────────────────────────
         http_api = apigwv2.HttpApi(self, "WriterApi")

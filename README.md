@@ -65,14 +65,21 @@ cdk deploy         # creates all resources in eu-west-1
 
 ### After first deploy
 
-Set the OpenAI API key in Secrets Manager (only needed once):
+Set secrets in Secrets Manager (only needed once):
 
 ```bash
 aws secretsmanager put-secret-value \
   --secret-id pulseq/openai-api-key \
   --secret-string "sk-..." \
   --region eu-west-1
+
+aws secretsmanager put-secret-value \
+  --secret-id pulseq/ifttt-key \
+  --secret-string "your-ifttt-webhook-key" \
+  --region eu-west-1
 ```
+
+The IFTTT webhook key is the key from `https://ifttt.com/maker_webhooks` → Documentation.
 
 Upload input files to S3:
 
@@ -92,8 +99,27 @@ bash s3/upload.sh
 - **AI Provider**: OpenAI API (GPT-4o)
 - **Compute**: AWS Lambda (Python 3.12)
 - **IaC**: AWS CDK (Python), region `eu-west-1`
-- **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`)
+- **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`, `pulseq/ifttt-key`)
+- **Notifications**: IFTTT Webhooks → IFTTT iPhone app
 - **Storage**: S3 — `pulseq-inputs` (inputs), `pulseq` (generated HTML, public website)
+
+## iOS Push Notifications
+
+When a new article is generated, the Lambda calls an IFTTT webhook which pushes a notification to your iPhone. Tapping it opens the article directly in Safari.
+
+**Setup (one-time)**
+
+1. Install the **IFTTT** app on your iPhone and allow notifications
+2. At ifttt.com, create an applet:
+   - **If:** Webhooks → "Receive a web request" → event name: `PulseQ`
+   - **Then:** Notifications → "Send a rich notification from the IFTTT app"
+     - Title: `PulseQ`
+     - Message: `{{Value2}}`
+     - Link URL: `{{Value1}}`
+3. Get your webhook key from ifttt.com/maker_webhooks → Documentation
+4. Store it in Secrets Manager (see Infrastructure → After first deploy)
+
+---
 
 ## Roadmap
 

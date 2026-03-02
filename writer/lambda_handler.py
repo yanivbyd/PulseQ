@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import tempfile
+import urllib.request
 from pathlib import Path
 
 import boto3
@@ -12,8 +14,9 @@ try:
 except ImportError:
     from writer.writer import run  # type: ignore[no-redef]  # Test environment
 
-# Module-level cache for the OpenAI API key (populated on cold start)
+# Module-level caches (populated on cold start)
 _api_key: str | None = None
+_ifttt_key: str | None = None
 
 
 def _get_api_key() -> str:
@@ -25,9 +28,33 @@ def _get_api_key() -> str:
     return _api_key
 
 
+def _get_ifttt_key() -> str:
+    global _ifttt_key
+    if _ifttt_key is None:
+        client = boto3.client("secretsmanager", region_name="eu-west-1")
+        response = client.get_secret_value(SecretId=os.environ["IFTTT_SECRET_NAME"])
+        _ifttt_key = response["SecretString"]
+    return _ifttt_key
+
+
 def _download_inputs(s3_client, bucket: str, tmp_inputs: Path) -> None:
     for key in ("instructions.md", "topic.md", "history.md"):
         s3_client.download_file(bucket, f"inputs/{key}", str(tmp_inputs / key))
+
+
+def _extract_title(html: str) -> str:
+    match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE)
+    return match.group(1) if match else "New Article"
+
+
+def _send_notification(url: str, title: str) -> None:
+    key = _get_ifttt_key()
+    endpoint = f"https://maker.ifttt.com/trigger/PulseQ/with/key/{key}"
+    data = json.dumps({"value1": url, "value2": title}).encode()
+    req = urllib.request.Request(
+        endpoint, data=data, headers={"Content-Type": "application/json"}
+    )
+    urllib.request.urlopen(req)
 
 
 def handler(event, context):
@@ -65,6 +92,7 @@ def handler(event, context):
 
         output_file = html_files[0]
         key = output_file.name
+        title = _extract_title(output_file.read_text(encoding="utf-8"))
 
         try:
             s3.upload_file(
@@ -77,4 +105,11 @@ def handler(event, context):
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to upload output: {e}"})}
 
     url = f"http://{output_bucket}.s3-website.eu-west-1.amazonaws.com/{key}"
+
+    try:
+        _send_notification(url, title)
+    except Exception as e:
+        # Non-fatal — article was written successfully, notification is best-effort
+        print(f"Warning: failed to send notification: {e}")
+
     return {"statusCode": 200, "body": json.dumps({"url": url})}
