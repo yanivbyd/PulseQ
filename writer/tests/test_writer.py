@@ -1,12 +1,8 @@
 import os
-import sys
 import pytest
 import openai
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
-# Ensure the repo root is on the path so we can import writer.writer
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from writer.writer import generate_short_id, run
 
@@ -40,8 +36,8 @@ def mock_openai():
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 
-def test_happy_path(input_files, mock_openai, capsys):
-    """Valid inputs produce an HTML file in docs/ and print its path."""
+def test_happy_path(input_files, mock_openai):
+    """Valid inputs produce an HTML file in docs/."""
     docs = input_files / "docs"
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
@@ -51,47 +47,40 @@ def test_happy_path(input_files, mock_openai, capsys):
     assert len(html_files) == 1
     assert html_files[0].read_text() == "<html><title>Test</title></html>"
 
-    captured = capsys.readouterr()
-    assert str(html_files[0]) in captured.out
-
 
 def test_missing_instructions(input_files, mock_openai):
-    """Missing instructions.md exits non-zero."""
+    """Missing instructions.md raises FileNotFoundError."""
     (input_files / "inputs" / "instructions.md").unlink()
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(FileNotFoundError):
             run(base_dir=input_files, docs_dir=input_files / "docs")
-    assert exc.value.code != 0
 
 
 def test_missing_topic(input_files, mock_openai):
-    """Missing topic.md exits non-zero."""
+    """Missing topic.md raises FileNotFoundError."""
     (input_files / "inputs" / "topic.md").unlink()
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(FileNotFoundError):
             run(base_dir=input_files, docs_dir=input_files / "docs")
-    assert exc.value.code != 0
 
 
 def test_missing_history(input_files, mock_openai):
-    """Missing history.md exits non-zero."""
+    """Missing history.md raises FileNotFoundError."""
     (input_files / "inputs" / "history.md").unlink()
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(FileNotFoundError):
             run(base_dir=input_files, docs_dir=input_files / "docs")
-    assert exc.value.code != 0
 
 
 def test_missing_api_key(input_files):
-    """Missing OPENAI_API_KEY exits non-zero before any API call."""
+    """Missing OPENAI_API_KEY raises EnvironmentError before any API call."""
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(EnvironmentError):
             run(base_dir=input_files, docs_dir=input_files / "docs")
-    assert exc.value.code != 0
 
 
 def test_short_id_format():
@@ -107,12 +96,11 @@ def test_short_id_uniqueness():
     assert len(ids) > 1
 
 
-def test_openai_error_exits(input_files):
-    """An OpenAI API error exits non-zero."""
+def test_openai_error_propagates(input_files):
+    """An OpenAI API error propagates as OpenAIError."""
     mock_client = MagicMock()
     mock_client.chat.completions.create.side_effect = openai.OpenAIError("api failure")
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(openai.OpenAIError):
             run(base_dir=input_files, docs_dir=input_files / "docs")
-    assert exc.value.code != 0

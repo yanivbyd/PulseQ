@@ -1,6 +1,10 @@
 # Content History
 Title: How Rate Limiting Works at Scale
 Match: Good
+
+Title: How API Gateways Work at Scale
+Match: Good
+
 <!--
   One entry per generated article. Updated manually after each run.
 
