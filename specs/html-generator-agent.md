@@ -28,23 +28,24 @@ The script does **not** commit, stage, push, or modify any input files — that 
 ## File Layout
 
 ```
-agents/
+writer/
   writer.py          ← the agent script
-inputs/
-  instructions.md    ← content/structure guide (committed, reused)
-  topic.md           ← per-run content (committed, updated manually)
-  history.md         ← content history log (committed, updated manually)
+  requirements.txt   ← Python dependencies
+  inputs/
+    instructions.md  ← content/structure guide (committed, reused)
+    topic.md         ← per-run content (committed, updated manually)
+    history.md       ← content history log (committed, updated manually)
+  tests/
+    test_writer.py   ← unit tests
 docs/
   style.css          ← shared stylesheet (committed, referenced by all articles)
   <short-id>.html    ← generated output (committed by user after review)
-tests/
-  test_writer.py     ← unit tests
 ```
 
 ## Invocation
 
 ```bash
-python agents/writer.py
+python writer/writer.py
 # → writes docs/a3f9z.html and prints the path
 ```
 

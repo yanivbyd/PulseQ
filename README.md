@@ -48,6 +48,47 @@ Every day, PulseQ:
 - **Adaptive** — user profile evolves over time via simple, transparent heuristics
 - **Extensible** — clean architecture ready for multi-agent decomposition
 
+## Running the Writer Agent
+
+The Writer agent generates a styled HTML article page from a topic file and publishes it to `docs/`.
+
+**Prerequisites**
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r writer/requirements.txt
+```
+
+Add your OpenAI API key to `.env` at the repo root:
+
+```
+OPENAI_API_KEY=sk-...
+```
+
+**Workflow**
+
+1. Edit `inputs/topic.md` with the article content
+2. Run the agent:
+   ```bash
+   export $(cat .env) && .venv/bin/python writer/writer.py
+   # → writes docs/<id>.html and prints the path
+   ```
+3. Review the generated file, then commit and push
+
+**Input files** (all hard-coded, committed to the repo):
+
+| File | Purpose |
+|---|---|
+| `writer/inputs/instructions.md` | Visual style and content guidance |
+| `writer/inputs/topic.md` | Per-run article content — edit this each time |
+| `writer/inputs/history.md` | Past articles log — update manually after each run |
+| `docs/style.css` | Shared stylesheet referenced by all generated pages |
+
+## Running Tests
+
+```bash
+.venv/bin/pytest writer/tests/ --cov=writer --cov-report=term-missing
+```
+
 ## Project Status
 
 > Early development — architecture and scaffolding in progress.

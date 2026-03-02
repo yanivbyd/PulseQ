@@ -2,6 +2,8 @@
 
 You are generating an HTML article page for PulseQ — a daily AI and tech news brief. The output must be a complete, valid HTML5 document. It references the shared `style.css` stylesheet (provided below) and adds no additional CSS beyond the per-article accent color override. No JavaScript.
 
+Output raw HTML only — no markdown, no code fences, no explanation. The response must start with `<!DOCTYPE html>` and nothing else.
+
 ---
 
 ## Color and Theming

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How API Gateways Work at Scale</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        :root { --accent: #ff7f50; }
+        @media (prefers-color-scheme: dark) { :root { --accent: #ff6347; } }
+    </style>
+</head>
+<body>
+    <article>
+        <div class="header-card">
+            <h1>How API Gateways Work at Scale</h1>
+            <p class="byline">PulseQ Daily Brief</p>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">🔀</span>Routing and Traffic Management</h2>
+            <p>API gateways are the central component in directing traffic within a service-oriented architecture. They manage incoming requests by forwarding them to the appropriate service endpoints. With the capability to handle a multitude of protocols, including HTTP, WebSocket, and gRPC, API gateways ensure that client requests are routed to the correct service efficiently.</p>
+            <blockquote>API gateways are crucial for decoupling clients from the backend, enabling independent service evolution.</blockquote>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">🔐</span>Authentication and Authorization</h2>
+            <p>At scale, securing APIs through authentication and authorization becomes vital. API gateways integrate with identity providers using protocols like OAuth 2.0 and OpenID Connect to manage user identity and access controls. This centralization simplifies security management by offloading these mechanisms from individual services to the gateway.</p>
+            <h3>Multi-Tenancy Support</h3>
+            <p>With the ability to handle authentication for multiple clients in a multi-tenant environment, gateways ensure that users only have access to permissible resources, thus strengthening the security posture of the overall system.</p>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">📈</span>Rate Limiting and Quotas</h2>
+            <p>To protect backend services from overload and ensure fair usage, API gateways implement rate limiting and quota management strategies. By monitoring and controlling the number of requests a client can make, gateways help maintain system stability.</p>
+            <h3>Strategies</h3>
+            <p>Common strategies include:</p>
+            <ul>
+                <li><code>Token Bucket</code>: Allows for a burst of usage followed by a steady rate.</li>
+                <li><code>Leaky Bucket</code>: Ensures a fixed output rate by spreading burst requests over time.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">🛠️</span>Integration with Other Services</h2>
+            <p>API gateways seamlessly integrate with logging, monitoring, and tracing systems, allowing operators to gain insights into API performance and health. This integration facilitates better operational oversight and faster diagnosis of issues, ensuring optimal service delivery.</p>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">📊</span>Control Plane Capabilities</h2>
+            <p>Modern architectures leverage API gateways not just as request dispatchers but as control planes that manage service policies and configurations at runtime. They provide operators with real-time visibility and control over API behaviors, including traffic patterns and security policies, thus aligning closely with DevOps and SRE practices.</p>
+            <div class="pros-cons">
+                <div class="pros">
+                    <h4>Advantages</h4>
+                    <ul>
+                        <li>Centralized management of security policies.</li>
+                        <li>Better monitoring and observability across services.</li>
+                    </ul>
+                </div>
+                <div class="cons">
+                    <h4>Challenges</h4>
+                    <ul>
+                        <li>Increased complexity in configuration and management.</li>
+                        <li>Potential performance bottlenecks if not scaled properly.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">💡</span>Insights</h2>
+            <h3>Role in Microservices</h3>
+            <p>API gateways are indispensable in microservices architecture by reducing the complexity of interactions between clients and backend services. They serve as a central hub that manages all aspects of API interactions, from routing to policy enforcement.</p>
+            <div class="tip">
+                Always align API gateway configurations with your architecture's evolving requirements to avoid mismatches in service delivery.
+            </div>
+        </div>
+    </article>
+</body>
+</html>
