@@ -9,7 +9,7 @@ The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-
 ### Trigger
 
 ```bash
-curl -X POST <api-gateway-url>/run
+curl -X POST https://3mlilr6w93.execute-api.eu-west-1.amazonaws.com/run
 # → {"url": "http://pulseq.s3-website.eu-west-1.amazonaws.com/<id>.html"}
 ```
 

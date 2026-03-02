@@ -1,5 +1,6 @@
 from aws_cdk import (
     BundlingOptions,
+    CfnOutput,
     Duration,
     RemovalPolicy,
     Stack,
@@ -53,6 +54,7 @@ class WriterStack(Stack):
             self,
             "WriterFunction",
             runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
             handler="lambda_handler.handler",
             code=_lambda.Code.from_asset(
                 "../writer",
@@ -87,3 +89,5 @@ class WriterStack(Stack):
                 "WriterIntegration", writer_fn
             ),
         )
+
+        CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")

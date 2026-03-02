@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Load Balancers Work (L4 vs L7)</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+      :root { --accent: #4731d3; }
+      @media (prefers-color-scheme: dark) { :root { --accent: #725bce; } }
+    </style>
+</head>
+<body>
+    <article>
+        <div class="header-card">
+            <h1>How Load Balancers Work (L4 vs L7)</h1>
+            <p class="byline">PulseQ Daily Brief</p>
+        </div>
+        
+        <div class="section">
+            <h2><span class="icon">⚖️</span> Understanding Load Balancers</h2>
+            <p>Load balancers are critical components in modern cloud architectures, serving as intermediaries that distribute client requests across multiple servers to ensure scalability and reliability of applications. They act at different layers of the OSI model, commonly referred to as Layer 4 (Transport) and Layer 7 (Application) load balancers, each offering distinct functionalities.</p>
+            <blockquote>Load balancers efficiently distribute network or application traffic across multiple servers to improve responsiveness and increase application availability.</blockquote>
+        </div>
+        
+        <div class="section">
+            <h2><span class="icon">🔗</span> L4 vs L7: Core Differences</h2>
+            <h3>Layer 4 (L4) Load Balancers</h3>
+            <p>L4 load balancers operate at the transport layer, managing traffic based on data from network protocols such as TCP and UDP. They route packets without examining the content, which results in faster performance but limits them to basic traffic distribution.</p>
+            
+            <h3>Layer 7 (L7) Load Balancers</h3>
+            <p>Contrastingly, L7 load balancers function at the application level and can make more intelligent routing decisions based on the content of the messages. This includes HTTP headers and SSL session IDs. While L7 offers greater flexibility and can enable features like SSL termination and content-based routing, it typically involves higher overhead.</p>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">🔑</span> Concepts Enhancing Load Balancing</h2>
+            
+            <h3>Consistent Hashing</h3>
+            <p>Consistent hashing is a technique to distribute incoming requests such that minimal changes occur when servers are added or removed. This is crucial for both fault tolerance and minimizing disruption during scaling operations. By ensuring that key-value pairs remain relatively stable despite the changes in the server fleet, consistent hashing maintains service reliability.</p>
+
+            <h3>Health Checks</h3>
+            <p>Health checks are routine queries executed from the load balancer to the backend servers to determine their status. These checks allow the load balancer to reroute traffic away from unhealthy or unresponsive servers, ensuring users connect to only functional instances. Health checks can be as simple as a ping, or more complex involving arbor-level queries.</p>
+            
+            <div class="tip">Regularly configure and test your health checks to maintain optimal load balancing efficiency.</div>
+
+            <h3>Failure Modes</h3>
+            <p>Failure modes in load balancing can induce partial or complete service outages. Common failures include overload of backend servers, misconfigurations, or network bottlenecks. Effective load balancers mitigate these issues through techniques such as request throttling, graceful degradation, and rerouting based on real-time performance metrics.</p>
+        </div>
+
+        <div class="section">
+            <h2><span class="icon">✨</span> Best Practices for Implementing Load Balancers</h2>
+            <ol class="layered">
+                <li>Define clear needs and choose between L4 or L7 load balancing based on application requirements.</li>
+                <li>Implement health checks and configure alarms for immediate awareness of failure states.</li>
+                <li>Utilize consistent hashing for scalable and resilient traffic distribution.</li>
+                <li>Test and adjust load balancer configurations regularly to prevent unforeseen failures.</li>
+            </ol>
+        </div>
+    </article>
+</body>
+</html>
