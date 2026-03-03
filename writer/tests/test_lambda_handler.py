@@ -22,6 +22,10 @@ SECRETS = {
     "pulseq/ifttt-key": "ifttt-test-key",
 }
 
+SAMPLE_TOPICS = {
+    "topics": [{"title": "N+1 Queries", "description": "Detection patterns."}]
+}
+
 
 def _make_sm_client():
     def _get_secret_value(SecretId):
@@ -34,11 +38,22 @@ def _make_sm_client():
     return sm
 
 
-def _make_s3_client():
-    return MagicMock()
+def _make_s3_client(topics=None):
+    """Return a mock S3 client that writes JSON/md content to the dest path on download."""
+    topics_content = json.dumps(topics if topics is not None else SAMPLE_TOPICS)
+
+    def _download_file(bucket, key, dest):
+        if key == "inputs/topics.json":
+            Path(dest).write_text(topics_content)
+        elif key == "inputs/instructions.md":
+            Path(dest).write_text("# Instructions")
+
+    s3 = MagicMock()
+    s3.download_file.side_effect = _download_file
+    return s3
 
 
-def _fake_run(base_dir, docs_dir):
+def _fake_run(base_dir, docs_dir, topic):
     """Simulate writer.run() creating one HTML file."""
     docs_dir.mkdir(exist_ok=True)
     (docs_dir / "abc12.html").write_text("<html><head><title>How Load Balancers Work</title></head></html>")
@@ -74,6 +89,37 @@ class TestLambdaHandler:
         _, upload_args, upload_kwargs = s3.upload_file.mock_calls[0]
         assert upload_kwargs["ExtraArgs"] == {"ContentType": "text/html"}
         mock_urlopen.assert_called_once()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.client")
+    @patch("writer.lambda_handler.run", side_effect=_fake_run)
+    def test_run_receives_topic(self, mock_run, mock_boto_client, mock_urlopen):
+        """Lambda picks a topic from topics.json and passes it to run()."""
+        sm = _make_sm_client()
+        s3 = _make_s3_client()
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+
+        from writer.lambda_handler import handler
+        handler({}, None)
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["topic"] == "N+1 Queries — Detection patterns."
+        assert "history" not in kwargs
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.boto3.client")
+    def test_empty_topics_list_fails(self, mock_boto_client):
+        """topics.json with an empty array returns 500."""
+        sm = _make_sm_client()
+        s3 = _make_s3_client(topics={"topics": []})
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+
+        from writer.lambda_handler import handler
+        result = handler({}, None)
+
+        assert result["statusCode"] == 500
+        assert "Failed to download inputs" in json.loads(result["body"])["error"]
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
@@ -142,21 +188,6 @@ class TestLambdaHandler:
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
     @patch("writer.lambda_handler.boto3.client")
-    @patch("writer.lambda_handler.run", side_effect=FileNotFoundError("inputs/topic.md not found"))
-    def test_writer_run_failure(self, mock_run, mock_boto_client, mock_urlopen):
-        sm = _make_sm_client()
-        s3 = _make_s3_client()
-        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
-
-        from writer.lambda_handler import handler
-        result = handler({}, None)
-
-        assert result["statusCode"] == 500
-        assert "writer.run() failed" in json.loads(result["body"])["error"]
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.lambda_handler.urllib.request.urlopen")
-    @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
     def test_s3_upload_failure(self, mock_run, mock_boto_client, mock_urlopen):
         from botocore.exceptions import ClientError
@@ -172,6 +203,21 @@ class TestLambdaHandler:
 
         assert result["statusCode"] == 500
         assert "Failed to upload output" in json.loads(result["body"])["error"]
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.client")
+    @patch("writer.lambda_handler.run", side_effect=RuntimeError("writer failed"))
+    def test_writer_run_failure(self, mock_run, mock_boto_client, mock_urlopen):
+        sm = _make_sm_client()
+        s3 = _make_s3_client()
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+
+        from writer.lambda_handler import handler
+        result = handler({}, None)
+
+        assert result["statusCode"] == 500
+        assert "writer.run() failed" in json.loads(result["body"])["error"]
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")

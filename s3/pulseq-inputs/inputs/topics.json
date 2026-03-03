@@ -1,0 +1,16 @@
+{
+  "topics": [
+    {
+      "title": "N+1 Query Problem at Scale",
+      "description": "Detection patterns, batching strategies."
+    },
+    {
+      "title": "WebAssembly beyond the browser",
+      "description": "Use cases and runtimes."
+    },
+    {
+      "title": "Observability vs monitoring",
+      "description": "What changes at scale."
+    }
+  ]
+}

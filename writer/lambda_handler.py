@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import re
 import tempfile
 import urllib.request
@@ -37,9 +38,16 @@ def _get_ifttt_key() -> str:
     return _ifttt_key
 
 
-def _download_inputs(s3_client, bucket: str, tmp_inputs: Path) -> None:
-    for key in ("instructions.md", "topic.md", "history.md"):
+def _load_inputs(s3_client, bucket: str, tmp_inputs: Path) -> str:
+    for key in ("instructions.md", "topics.json"):
         s3_client.download_file(bucket, f"inputs/{key}", str(tmp_inputs / key))
+
+    topics_data = json.loads((tmp_inputs / "topics.json").read_text())
+    topics = topics_data.get("topics", [])
+    if not topics:
+        raise ValueError("topics.json contains no topics")
+    chosen = random.choice(topics)
+    return f"{chosen['title']} — {chosen['description']}"
 
 
 def _extract_title(html: str) -> str:
@@ -77,12 +85,12 @@ def handler(event, context):
         tmp_docs = tmp_path / "docs"
 
         try:
-            _download_inputs(s3, input_bucket, tmp_inputs)
+            topic = _load_inputs(s3, input_bucket, tmp_inputs)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to download inputs: {e}"})}
 
         try:
-            run(base_dir=tmp_path, docs_dir=tmp_docs)
+            run(base_dir=tmp_path, docs_dir=tmp_docs, topic=topic)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"writer.run() failed: {e}"})}
 

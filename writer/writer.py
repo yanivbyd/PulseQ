@@ -17,21 +17,19 @@ def _read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def run(base_dir: Path, docs_dir: Path) -> None:
+def run(base_dir: Path, docs_dir: Path, topic: str) -> None:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
 
     instructions = _read_file(base_dir / "inputs" / "instructions.md")
-    topic        = _read_file(base_dir / "inputs" / "topic.md")
-    history      = _read_file(base_dir / "inputs" / "history.md")
 
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": instructions},
-            {"role": "user",   "content": f"--- TOPIC ---\n{topic}\n\n--- HISTORY ---\n{history}"},
+            {"role": "user",   "content": f"--- TOPIC ---\n{topic}"},
         ],
     )
 

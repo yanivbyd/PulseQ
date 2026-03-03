@@ -11,16 +11,12 @@ from writer.writer import generate_short_id, run
 
 @pytest.fixture
 def input_files(tmp_path):
-    """Create all required input files and a docs dir."""
+    """Create required input files and a docs dir."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     docs = tmp_path / "docs"
     docs.mkdir()
-
     (inputs / "instructions.md").write_text("Style instructions.")
-    (inputs / "topic.md").write_text("Topic content.")
-    (inputs / "history.md").write_text("## abc12\n- Title: Old Article\n- Match: Good")
-
     return tmp_path
 
 
@@ -41,11 +37,24 @@ def test_happy_path(input_files, mock_openai):
     docs = input_files / "docs"
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        run(base_dir=input_files, docs_dir=docs)
+        run(base_dir=input_files, docs_dir=docs, topic="N+1 Queries — Detection patterns.")
 
     html_files = list(docs.glob("*.html"))
     assert len(html_files) == 1
     assert html_files[0].read_text() == "<html><title>Test</title></html>"
+
+
+def test_topic_included_in_prompt(input_files, mock_openai):
+    """Topic string is passed verbatim to the OpenAI prompt; no history section."""
+    docs = input_files / "docs"
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        run(base_dir=input_files, docs_dir=docs, topic="My Topic")
+
+    call_args = mock_openai.chat.completions.create.call_args
+    user_message = call_args.kwargs["messages"][1]["content"]
+    assert "My Topic" in user_message
+    assert "HISTORY" not in user_message
 
 
 def test_missing_instructions(input_files, mock_openai):
@@ -54,25 +63,7 @@ def test_missing_instructions(input_files, mock_openai):
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(FileNotFoundError):
-            run(base_dir=input_files, docs_dir=input_files / "docs")
-
-
-def test_missing_topic(input_files, mock_openai):
-    """Missing topic.md raises FileNotFoundError."""
-    (input_files / "inputs" / "topic.md").unlink()
-    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
-         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(FileNotFoundError):
-            run(base_dir=input_files, docs_dir=input_files / "docs")
-
-
-def test_missing_history(input_files, mock_openai):
-    """Missing history.md raises FileNotFoundError."""
-    (input_files / "inputs" / "history.md").unlink()
-    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
-         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with pytest.raises(FileNotFoundError):
-            run(base_dir=input_files, docs_dir=input_files / "docs")
+            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
 
 
 def test_missing_api_key(input_files):
@@ -80,7 +71,7 @@ def test_missing_api_key(input_files):
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            run(base_dir=input_files, docs_dir=input_files / "docs")
+            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
 
 
 def test_short_id_format():
@@ -103,4 +94,4 @@ def test_openai_error_propagates(input_files):
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            run(base_dir=input_files, docs_dir=input_files / "docs")
+            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
