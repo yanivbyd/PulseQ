@@ -15,6 +15,7 @@ ENV = {
     "IFTTT_SECRET_NAME": "pulseq/ifttt-key",
     "INPUT_BUCKET": "pulseq-inputs",
     "OUTPUT_BUCKET": "pulseq",
+    "WEB_BASE_URL": "https://test-web.execute-api.eu-west-1.amazonaws.com",
 }
 
 SECRETS = {
@@ -83,12 +84,12 @@ class TestLambdaHandler:
 
         assert result["statusCode"] == 200
         body = json.loads(result["body"])
-        assert body["url"].startswith("http://pulseq.s3-website.eu-west-1.amazonaws.com/")
-        assert body["url"].endswith(".html")
+        assert body["url"] == "https://test-web.execute-api.eu-west-1.amazonaws.com/abc12"
         s3.upload_file.assert_called_once()
         _, upload_args, upload_kwargs = s3.upload_file.mock_calls[0]
         assert upload_kwargs["ExtraArgs"] == {"ContentType": "text/html"}
-        mock_urlopen.assert_called_once()
+        # warm-up call + notification call
+        assert mock_urlopen.call_count == 2
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
@@ -135,6 +136,24 @@ class TestLambdaHandler:
         result = handler({}, None)
 
         assert result["statusCode"] == 200
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.client")
+    @patch("writer.lambda_handler.run", side_effect=_fake_run)
+    def test_warmup_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_urlopen):
+        """Warm-up failure does not block notification or success response."""
+        sm = _make_sm_client()
+        s3 = _make_s3_client()
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        # First call (warm-up) fails; second call (notification) succeeds
+        mock_urlopen.side_effect = [Exception("warm-up timeout"), None]
+
+        from writer.lambda_handler import handler
+        result = handler({}, None)
+
+        assert result["statusCode"] == 200
+        assert mock_urlopen.call_count == 2
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")

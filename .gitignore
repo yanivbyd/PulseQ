@@ -10,9 +10,13 @@ __pycache__/
 # Testing & coverage
 .coverage
 .pytest_cache/
+coverage/
 
 # Environment
 .env
 
 # CDK
 cdk.out/
+
+# Node.js
+node_modules/

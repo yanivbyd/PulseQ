@@ -5,12 +5,16 @@
       "description": "Detection patterns, batching strategies."
     },
     {
-      "title": "WebAssembly beyond the browser",
-      "description": "Use cases and runtimes."
+      "title": "How Connection Pooling Works",
+      "description": "Pool sizing math, queueing effects, saturation signals."
     },
     {
-      "title": "Observability vs monitoring",
-      "description": "What changes at scale."
+      "title": "Bloom Filters in Production Systems",
+      "description": "False positive math, sizing formula, real-world use cases."
+    },
+    {
+      "title": "How Distributed Locks Work (and Fail)",
+      "description": "Redis Redlock debate, lease-based locks, fencing tokens"
     }
   ]
 }

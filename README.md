@@ -4,13 +4,13 @@ PulseQ is an autonomous, modular AI system that delivers a daily personalized te
 
 ## Writer Agent
 
-The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-4o, and writes a styled HTML article to the public `pulseq` S3 bucket.
+The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-4o, writes a styled HTML article to the `pulseq` S3 bucket, warms up the web server, and sends an iOS push notification with the article URL.
 
 ### Trigger
 
 ```bash
 curl -X POST https://3mlilr6w93.execute-api.eu-west-1.amazonaws.com/run
-# → {"url": "http://pulseq.s3-website.eu-west-1.amazonaws.com/<id>.html"}
+# → {"url": "https://<web-api-id>.execute-api.eu-west-1.amazonaws.com/<id>"}
 ```
 
 ### Input files
@@ -20,7 +20,7 @@ Stored in S3 under `s3://pulseq-inputs/inputs/`. The `s3/pulseq-inputs/` directo
 | File | Purpose |
 |---|---|
 | `inputs/instructions.md` | Visual style and content guidance |
-| `inputs/topic.md` | Per-run article content — edit this each time |
+| `inputs/topics.json` | Pool of topics — one is picked at random each run |
 | `inputs/history.md` | Past articles log — update manually after each run |
 
 ### S3 sync
@@ -38,20 +38,24 @@ bash s3/download.sh
 
 ### Typical workflow
 
-1. Edit `s3/pulseq-inputs/inputs/topic.md` with the new article topic
+1. Edit `s3/pulseq-inputs/inputs/topics.json` to add or update topics
 2. Run `bash s3/upload.sh` to push inputs to S3
-3. Trigger the Lambda: `curl -X POST <api-gateway-url>/run`
+3. Trigger the Lambda: `curl -X POST <writer-api-url>/run`
 4. Open the returned URL to review the article
 5. Run `bash s3/download.sh` to pull the generated HTML into `s3/pulseq/`
 6. Update `s3/pulseq-inputs/inputs/history.md` with the new article title, then upload again
 
 ### Shared stylesheet
 
-`s3/pulseq/style.css` is the shared stylesheet referenced by all generated pages. It lives in the `pulseq` bucket alongside the HTML files.
+`s3/pulseq/style.css` is the shared stylesheet referenced by all generated pages. It lives in the `pulseq` bucket and is served directly from the S3 static website URL.
+
+## Web Server
+
+A Node.js 22.x Lambda serves generated articles at `GET /<id>`. It reads the corresponding HTML file from the `pulseq` S3 bucket and returns it. After the writer Lambda uploads a new article, it pre-warms the web Lambda before sending the notification so the page loads immediately when you tap through.
 
 ## Infrastructure
 
-CDK stack is in `infra/`. It provisions the two S3 buckets, Secrets Manager secret, Lambda, and API Gateway.
+CDK stack is in `infra/`. It provisions the two S3 buckets, Secrets Manager secrets, writer Lambda, web Lambda, and two API Gateways.
 
 ### Deploy
 
@@ -87,21 +91,33 @@ Upload input files to S3:
 bash s3/upload.sh
 ```
 
-## Running Tests
+## Deploy
+
+Runs all tests and, if they pass, deploys to AWS:
 
 ```bash
+bash deploy.sh
+```
+
+## Running Tests Individually
+
+```bash
+# Python (writer + lambda handler)
 .venv/bin/pytest writer/tests/ --cov=writer --cov-report=term-missing
+
+# Node.js (web server) — first install deps once: npm install
+cd web_server && npm test
 ```
 
 ## Tech Stack
 
-- **Language**: Python
+- **Languages**: Python (writer Lambda), Node.js 22.x (web Lambda)
 - **AI Provider**: OpenAI API (GPT-4o)
-- **Compute**: AWS Lambda (Python 3.12)
+- **Compute**: AWS Lambda — Python 3.12 (writer), Node.js 22.x (web)
 - **IaC**: AWS CDK (Python), region `eu-west-1`
 - **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`, `pulseq/ifttt-key`)
 - **Notifications**: IFTTT Webhooks → IFTTT iPhone app
-- **Storage**: S3 — `pulseq-inputs` (inputs), `pulseq` (generated HTML, public website)
+- **Storage**: S3 — `pulseq-inputs` (inputs), `pulseq` (generated HTML + stylesheet)
 
 ## iOS Push Notifications
 

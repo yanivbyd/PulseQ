@@ -55,6 +55,13 @@ def _extract_title(html: str) -> str:
     return match.group(1) if match else "New Article"
 
 
+def _warm_up(url: str) -> None:
+    try:
+        urllib.request.urlopen(url, timeout=10)
+    except Exception as e:
+        print(f"Warning: warm-up request failed: {e}")
+
+
 def _send_notification(url: str, title: str) -> None:
     key = _get_ifttt_key()
     endpoint = f"https://maker.ifttt.com/trigger/PulseQ/with/key/{key}"
@@ -112,7 +119,10 @@ def handler(event, context):
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to upload output: {e}"})}
 
-    url = f"http://{output_bucket}.s3-website.eu-west-1.amazonaws.com/{key}"
+    article_id = key.removesuffix(".html")
+    url = f"{os.environ['WEB_BASE_URL']}/{article_id}"
+
+    _warm_up(url)
 
     try:
         _send_notification(url, title)

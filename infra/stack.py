@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as integrations,
     aws_lambda as _lambda,
+    aws_lambda_nodejs as nodejs,
     aws_s3 as s3,
     aws_secretsmanager as sm,
 )
@@ -55,7 +56,7 @@ class WriterStack(Stack):
             "pulseq/ifttt-key",
         )
 
-        # ── Lambda ──────────────────────────────────────────────────────────
+        # ── Writer Lambda ──────────────────────────────────────────────────────────
         writer_fn = _lambda.Function(
             self,
             "WriterFunction",
@@ -88,7 +89,7 @@ class WriterStack(Stack):
         secret.grant_read(writer_fn)
         ifttt_secret.grant_read(writer_fn)
 
-        # ── API Gateway HTTP API ─────────────────────────────────────────────
+        # ── API Gateway HTTP API (writer) ────────────────────────────────────
         http_api = apigwv2.HttpApi(self, "WriterApi")
         http_api.add_routes(
             path="/run",
@@ -99,3 +100,35 @@ class WriterStack(Stack):
         )
 
         CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")
+
+        # ── Web Lambda (Node.js — serves articles from S3) ──────────────────
+        web_fn = nodejs.NodejsFunction(
+            self,
+            "WebFunction",
+            entry="../web_server/index.ts",
+            handler="handler",
+            runtime=_lambda.Runtime.NODEJS_22_X,
+            architecture=_lambda.Architecture.ARM_64,
+            timeout=Duration.seconds(10),
+            environment={
+                "WEB_BUCKET": output_bucket.bucket_name,
+            },
+            bundling=nodejs.BundlingOptions(
+                external_modules=["@aws-sdk/*"],
+            ),
+        )
+        output_bucket.grant_read(web_fn)
+
+        # ── API Gateway HTTP API (web) ───────────────────────────────────────
+        web_api = apigwv2.HttpApi(self, "WebApi")
+        web_api.add_routes(
+            path="/{id}",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=integrations.HttpLambdaIntegration(
+                "WebIntegration", web_fn
+            ),
+        )
+
+        writer_fn.add_environment("WEB_BASE_URL", web_api.api_endpoint)
+
+        CfnOutput(self, "WebUrl", value=web_api.api_endpoint)

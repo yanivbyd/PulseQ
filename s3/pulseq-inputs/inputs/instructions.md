@@ -11,7 +11,7 @@ Output raw HTML only — no markdown, no code fences, no explanation. The respon
 The shared stylesheet (`docs/style.css`) defines all CSS custom properties and component styles. The only per-article CSS override is the accent color — set it in an inline `<style>` block:
 
 ```html
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="http://pulseq.s3-website.eu-west-1.amazonaws.com/style.css">
 <style>
   :root { --accent: #your-color; }
   @media (prefers-color-scheme: dark) { :root { --accent: #your-dark-color; } }
@@ -66,4 +66,10 @@ The stylesheet constraints stay fixed. Everything else can breathe.
 - `lang="en"` on `<html>`
 - `charset="UTF-8"` and `viewport` meta tags required
 - Byline is always "PulseQ Daily Brief"
-- No links, no navigation, no footer — just the article
+- No links, no navigation, no footer — just the article, with one exception: the Further Reading section below.
+
+---
+
+## Further Reading
+
+End every article with a `.section` containing an `<h2>` titled "Further Reading" and a list of exactly 3 links to real, publicly accessible blog posts or documentation pages that are directly relevant to the article's topic. Choose well-known sources (official docs, major engineering blogs, reputable publications). Only include URLs you are confident exist. Use plain `<a href="...">` tags — no JavaScript, no tracking parameters.
