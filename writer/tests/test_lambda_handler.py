@@ -14,7 +14,7 @@ ENV = {
     "SECRET_NAME": "pulseq/openai-api-key",
     "IFTTT_SECRET_NAME": "pulseq/ifttt-key",
     "INPUT_BUCKET": "pulseq-inputs",
-    "OUTPUT_BUCKET": "pulseq",
+    "ARTICLES_TABLE": "pulseq-articles",
     "WEB_BASE_URL": "https://test-web.execute-api.eu-west-1.amazonaws.com",
 }
 
@@ -25,6 +25,17 @@ SECRETS = {
 
 SAMPLE_TOPICS = {
     "topics": [{"title": "N+1 Queries", "description": "Detection patterns."}]
+}
+
+SAMPLE_ARTICLE = {
+    "id": "abc12",
+    "html": (
+        "<style>:root { --accent: #0d9488; }</style>\n"
+        '<div class="header-card"><h1>How Load Balancers Work</h1></div>\n'
+        '<div class="section"><p>Content.</p></div>'
+    ),
+    "title": "How Load Balancers Work",
+    "accent": "#0d9488",
 }
 
 
@@ -54,17 +65,16 @@ def _make_s3_client(topics=None):
     return s3
 
 
-SAMPLE_FRAGMENT = (
-    "<style>:root { --accent: #0d9488; }</style>\n"
-    '<div class="header-card"><h1>How Load Balancers Work</h1></div>\n'
-    '<div class="section"><p>Content.</p></div>'
-)
+def _make_ddb_resource():
+    """Return a (ddb_resource_mock, table_mock) pair."""
+    table = MagicMock()
+    ddb = MagicMock()
+    ddb.Table.return_value = table
+    return ddb, table
 
 
-def _fake_run(base_dir, docs_dir, topic):
-    """Simulate writer.run() creating one HTML fragment file."""
-    docs_dir.mkdir(exist_ok=True)
-    (docs_dir / "abc12.html").write_text(SAMPLE_FRAGMENT)
+def _fake_run(base_dir, topic):
+    return SAMPLE_ARTICLE.copy()
 
 
 # ---------------------------------------------------------------------------
@@ -79,12 +89,15 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_happy_path(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_happy_path(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, table = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         result = handler({}, None)
@@ -92,21 +105,31 @@ class TestLambdaHandler:
         assert result["statusCode"] == 200
         body = json.loads(result["body"])
         assert body["url"] == "https://test-web.execute-api.eu-west-1.amazonaws.com/abc12"
-        s3.upload_file.assert_called_once()
-        _, upload_args, upload_kwargs = s3.upload_file.mock_calls[0]
-        assert upload_kwargs["ExtraArgs"] == {"ContentType": "text/html"}
-        # warm-up call + notification call
+
+        table.put_item.assert_called_once()
+        item = table.put_item.call_args.kwargs["Item"]
+        assert item["userid"] == "user1"
+        assert item["id"] == "abc12"
+        assert item["title"] == "How Load Balancers Work"
+        assert item["accent"] == "#0d9488"
+        assert item["html"] == SAMPLE_ARTICLE["html"]
+        assert isinstance(item["creation_timestamp"], str)
+
+        # warm-up + notification
         assert mock_urlopen.call_count == 2
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_run_receives_topic(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_run_receives_topic(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         """Lambda picks a topic from topics.json and passes it to run()."""
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         handler({}, None)
@@ -131,12 +154,15 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_notification_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_notification_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
         mock_urlopen.side_effect = Exception("IFTTT unreachable")
 
         from writer.lambda_handler import handler
@@ -146,14 +172,16 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_warmup_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_warmup_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         """Warm-up failure does not block notification or success response."""
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
-        # First call (warm-up) fails; second call (notification) succeeds
+        mock_boto_resource.return_value = ddb
         mock_urlopen.side_effect = [Exception("warm-up timeout"), None]
 
         from writer.lambda_handler import handler
@@ -197,12 +225,15 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_api_key_cached_across_calls(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_api_key_cached_across_calls(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         handler({}, None)
@@ -213,28 +244,31 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_s3_upload_failure(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_ddb_put_failure(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         from botocore.exceptions import ClientError
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        s3.upload_file.side_effect = ClientError(
-            {"Error": {"Code": "AccessDenied", "Message": "Forbidden"}}, "upload_file"
+        ddb, table = _make_ddb_resource()
+        table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "Throttled"}},
+            "put_item",
         )
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         result = handler({}, None)
 
         assert result["statusCode"] == 500
-        assert "Failed to upload output" in json.loads(result["body"])["error"]
+        assert "Failed to save article" in json.loads(result["body"])["error"]
 
     @patch.dict(os.environ, ENV)
-    @patch("writer.lambda_handler.urllib.request.urlopen")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=RuntimeError("writer failed"))
-    def test_writer_run_failure(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_writer_run_failure(self, mock_run, mock_boto_client):
         sm = _make_sm_client()
         s3 = _make_s3_client()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
@@ -244,28 +278,3 @@ class TestLambdaHandler:
 
         assert result["statusCode"] == 500
         assert "writer.run() failed" in json.loads(result["body"])["error"]
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.lambda_handler.urllib.request.urlopen")
-    @patch("writer.lambda_handler.boto3.client")
-    @patch("writer.lambda_handler.run")  # does nothing — produces no HTML
-    def test_no_html_produced(self, mock_run, mock_boto_client, mock_urlopen):
-        sm = _make_sm_client()
-        s3 = _make_s3_client()
-        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
-
-        from writer.lambda_handler import handler
-        result = handler({}, None)
-
-        assert result["statusCode"] == 500
-        assert "No HTML output produced" in json.loads(result["body"])["error"]
-
-
-class TestExtractTitle:
-    def test_extracts_title_from_h1(self):
-        from writer.lambda_handler import _extract_title
-        assert _extract_title('<h1>How Load Balancers Work</h1>') == "How Load Balancers Work"
-
-    def test_falls_back_when_no_h1(self):
-        from writer.lambda_handler import _extract_title
-        assert _extract_title('<div class="section"><p>No heading here.</p></div>') == "New Article"

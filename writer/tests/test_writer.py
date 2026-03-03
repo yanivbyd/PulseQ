@@ -11,11 +11,9 @@ from writer.writer import generate_short_id, run
 
 @pytest.fixture
 def input_files(tmp_path):
-    """Create required input files and a docs dir."""
+    """Create required input files."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
-    docs = tmp_path / "docs"
-    docs.mkdir()
     (inputs / "instructions.md").write_text("Style instructions.")
     return tmp_path
 
@@ -23,35 +21,41 @@ def input_files(tmp_path):
 @pytest.fixture
 def mock_openai():
     """Return a mock OpenAI client whose chat completion returns HTML."""
+    fragment = (
+        "<style>:root { --accent: #0d9488; }</style>\n"
+        "<div class=\"header-card\"><h1>Test Article</h1></div>"
+    )
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="<html><title>Test</title></html>"))]
+        choices=[MagicMock(message=MagicMock(content=fragment))]
     )
-    return mock_client
+    return mock_client, fragment
 
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 
 def test_happy_path(input_files, mock_openai):
-    """Valid inputs produce an HTML file in docs/."""
-    docs = input_files / "docs"
-    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+    """run() returns a dict with id, html, title, and accent."""
+    mock_client, fragment = mock_openai
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        run(base_dir=input_files, docs_dir=docs, topic="N+1 Queries — Detection patterns.")
+        result = run(base_dir=input_files, topic="N+1 Queries — Detection patterns.")
 
-    html_files = list(docs.glob("*.html"))
-    assert len(html_files) == 1
-    assert html_files[0].read_text() == "<html><title>Test</title></html>"
+    assert result["html"] == fragment
+    assert result["title"] == "Test Article"
+    assert result["accent"] == "#0d9488"
+    assert len(result["id"]) == 5
+    assert result["id"].isalnum()
 
 
 def test_topic_included_in_prompt(input_files, mock_openai):
     """Topic string is passed verbatim to the OpenAI prompt; no history section."""
-    docs = input_files / "docs"
-    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+    mock_client, _ = mock_openai
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        run(base_dir=input_files, docs_dir=docs, topic="My Topic")
+        run(base_dir=input_files, topic="My Topic")
 
-    call_args = mock_openai.chat.completions.create.call_args
+    call_args = mock_client.chat.completions.create.call_args
     user_message = call_args.kwargs["messages"][1]["content"]
     assert "My Topic" in user_message
     assert "HISTORY" not in user_message
@@ -59,11 +63,12 @@ def test_topic_included_in_prompt(input_files, mock_openai):
 
 def test_missing_instructions(input_files, mock_openai):
     """Missing instructions.md raises FileNotFoundError."""
+    mock_client, _ = mock_openai
     (input_files / "inputs" / "instructions.md").unlink()
-    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(FileNotFoundError):
-            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
+            run(base_dir=input_files, topic="T")
 
 
 def test_missing_api_key(input_files):
@@ -71,7 +76,7 @@ def test_missing_api_key(input_files):
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
+            run(base_dir=input_files, topic="T")
 
 
 def test_short_id_format():
@@ -94,4 +99,30 @@ def test_openai_error_propagates(input_files):
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            run(base_dir=input_files, docs_dir=input_files / "docs", topic="T")
+            run(base_dir=input_files, topic="T")
+
+
+def test_accent_fallback(input_files):
+    """When HTML has no --accent, accent defaults to #5b5ef4."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="<h1>No style</h1>"))]
+    )
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        result = run(base_dir=input_files, topic="T")
+
+    assert result["accent"] == "#5b5ef4"
+
+
+def test_title_fallback(input_files):
+    """When HTML has no h1, title defaults to 'New Article'."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="<p>No heading</p>"))]
+    )
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        result = run(base_dir=input_files, topic="T")
+
+    assert result["title"] == "New Article"

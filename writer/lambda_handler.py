@@ -1,9 +1,9 @@
 import json
 import os
 import random
-import re
 import tempfile
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import boto3
@@ -14,6 +14,8 @@ try:
     from writer import run  # Lambda environment: writer.py at bundle root
 except ImportError:
     from writer.writer import run  # type: ignore[no-redef]  # Test environment
+
+USER_ID = "user1"
 
 # Module-level caches (populated on cold start)
 _api_key: str | None = None
@@ -50,11 +52,6 @@ def _load_inputs(s3_client, bucket: str, tmp_inputs: Path) -> str:
     return f"{chosen['title']} — {chosen['description']}"
 
 
-def _extract_title(html: str) -> str:
-    match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
-    return match.group(1) if match else "New Article"
-
-
 def _warm_up(url: str) -> None:
     try:
         urllib.request.urlopen(url, timeout=10)
@@ -74,7 +71,7 @@ def _send_notification(url: str, title: str) -> None:
 
 def handler(event, context):
     input_bucket = os.environ["INPUT_BUCKET"]
-    output_bucket = os.environ["OUTPUT_BUCKET"]
+    table_name = os.environ["ARTICLES_TABLE"]
 
     try:
         api_key = _get_api_key()
@@ -86,10 +83,8 @@ def handler(event, context):
     s3 = boto3.client("s3", region_name="eu-west-1")
 
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        tmp_inputs = tmp_path / "inputs"
+        tmp_inputs = Path(tmp) / "inputs"
         tmp_inputs.mkdir()
-        tmp_docs = tmp_path / "docs"
 
         try:
             topic = _load_inputs(s3, input_bucket, tmp_inputs)
@@ -97,35 +92,31 @@ def handler(event, context):
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to download inputs: {e}"})}
 
         try:
-            run(base_dir=tmp_path, docs_dir=tmp_docs, topic=topic)
+            article = run(base_dir=Path(tmp), topic=topic)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"writer.run() failed: {e}"})}
 
-        html_files = list(tmp_docs.glob("*.html"))
-        if not html_files:
-            return {"statusCode": 500, "body": json.dumps({"error": "No HTML output produced"})}
+    creation_timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
-        output_file = html_files[0]
-        key = output_file.name
-        title = _extract_title(output_file.read_text(encoding="utf-8"))
+    try:
+        table = boto3.resource("dynamodb", region_name="eu-west-1").Table(table_name)
+        table.put_item(Item={
+            "userid": USER_ID,
+            "creation_timestamp": creation_timestamp,
+            "id": article["id"],
+            "title": article["title"],
+            "accent": article["accent"],
+            "html": article["html"],
+        })
+    except Exception as e:
+        return {"statusCode": 500, "body": json.dumps({"error": f"Failed to save article: {e}"})}
 
-        try:
-            s3.upload_file(
-                str(output_file),
-                output_bucket,
-                key,
-                ExtraArgs={"ContentType": "text/html"},
-            )
-        except Exception as e:
-            return {"statusCode": 500, "body": json.dumps({"error": f"Failed to upload output: {e}"})}
-
-    article_id = key.removesuffix(".html")
-    url = f"{os.environ['WEB_BASE_URL']}/{article_id}"
+    url = f"{os.environ['WEB_BASE_URL']}/{article['id']}"
 
     _warm_up(url)
 
     try:
-        _send_notification(url, title)
+        _send_notification(url, article["title"])
     except Exception as e:
         # Non-fatal — article was written successfully, notification is best-effort
         print(f"Warning: failed to send notification: {e}")

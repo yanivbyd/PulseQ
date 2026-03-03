@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import string
 from pathlib import Path
 
@@ -17,7 +18,17 @@ def _read_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def run(base_dir: Path, docs_dir: Path, topic: str) -> None:
+def _extract_title(html: str) -> str:
+    match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
+    return match.group(1) if match else "New Article"
+
+
+def _extract_accent(html: str) -> str:
+    match = re.search(r"--accent:\s*(#[0-9a-fA-F]{3,8})", html)
+    return match.group(1) if match else "#5b5ef4"
+
+
+def run(base_dir: Path, topic: str) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
@@ -34,5 +45,9 @@ def run(base_dir: Path, docs_dir: Path, topic: str) -> None:
     )
 
     html = response.choices[0].message.content
-    docs_dir.mkdir(exist_ok=True)
-    (docs_dir / f"{generate_short_id()}.html").write_text(html, encoding="utf-8")
+    return {
+        "id": generate_short_id(),
+        "html": html,
+        "title": _extract_title(html),
+        "accent": _extract_accent(html),
+    }

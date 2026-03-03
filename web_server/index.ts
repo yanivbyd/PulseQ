@@ -1,12 +1,9 @@
-import { S3Client, GetObjectCommand, NoSuchKey } from "@aws-sdk/client-s3";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
 const CSS_URL = "https://d1vjqvihd6azy3.cloudfront.net/style.css";
-
-export function extractTitle(fragment: string): string {
-  const match = fragment.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  return match ? match[1] : "PulseQ";
-}
+const USER_ID = "user1";
 
 export function buildShell(title: string, fragment: string): string {
   return `<!DOCTYPE html>
@@ -23,33 +20,36 @@ ${fragment}
 </html>`;
 }
 
-export function createHandler(s3Client: S3Client) {
+export function createHandler(ddbClient: DynamoDBDocumentClient) {
   return async function (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
-    const bucket = process.env.WEB_BUCKET;
-    if (!bucket) throw new Error("WEB_BUCKET environment variable is not set");
+    const tableName = process.env.ARTICLES_TABLE;
+    if (!tableName) throw new Error("ARTICLES_TABLE environment variable is not set");
+
     const id = event.pathParameters?.id;
     if (!id) {
       return { statusCode: 404, body: "Not Found" };
     }
-    try {
-      const response = await s3Client.send(
-        new GetObjectCommand({ Bucket: bucket, Key: `${id}.html` })
-      );
-      const fragment = await response.Body!.transformToString("utf-8");
-      const title = extractTitle(fragment);
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-        body: buildShell(title, fragment),
-      };
-    } catch (err: unknown) {
-      if (err instanceof NoSuchKey) {
-        return { statusCode: 404, body: "Not Found" };
-      }
-      throw err;
+
+    const result = await ddbClient.send(new QueryCommand({
+      TableName: tableName,
+      IndexName: "ById",
+      KeyConditionExpression: "id = :id",
+      ExpressionAttributeValues: { ":id": id },
+      Limit: 1,
+    }));
+
+    if (!result.Items || result.Items.length === 0) {
+      return { statusCode: 404, body: "Not Found" };
     }
+
+    const item = result.Items[0];
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+      body: buildShell(item.title as string, item.html as string),
+    };
   };
 }
 
-const s3 = new S3Client({ region: "eu-west-1" });
-export const handler = createHandler(s3);
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: "eu-west-1" }));
+export const handler = createHandler(ddb);
