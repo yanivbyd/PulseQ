@@ -192,3 +192,27 @@ ol.layered {
   .header-card h1 { font-size: 1.3em; }
   .pros-cons { grid-template-columns: 1fr; }
 }
+
+/* ── Home page ── */
+.home-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.home-item {
+  display: flex;
+  align-items: center;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  text-decoration: none;
+  color: #fff;
+}
+
+.home-item:hover { opacity: 0.85; }
+
+.home-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1.3;
+}

@@ -1,4 +1,4 @@
-import { createHandler, buildShell } from "../index";
+import { createHandler, buildShell, buildHomeFragment } from "../index";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
@@ -31,8 +31,24 @@ describe("buildShell", () => {
     const html = buildShell("My Title", "<p>body</p>");
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<title>My Title</title>");
-    expect(html).toContain('<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css">');
+    expect(html).toContain('<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css?v=2">');
     expect(html).toContain("<p>body</p>");
+  });
+});
+
+describe("buildHomeFragment", () => {
+  test("renders a card per article with accent background and title", () => {
+    const fragment = buildHomeFragment([SAMPLE_ITEM]);
+    expect(fragment).toContain('href="/abc12"');
+    expect(fragment).toContain('style="background:#0d9488"');
+    expect(fragment).toContain("How Load Balancers Work");
+    expect(fragment).toContain('class="home-item"');
+  });
+
+  test("renders empty state when no articles", () => {
+    const fragment = buildHomeFragment([]);
+    expect(fragment).toContain("No articles yet.");
+    expect(fragment).not.toContain("home-item");
   });
 });
 
@@ -67,14 +83,6 @@ describe("GET /{id}", () => {
     expect(result.statusCode).toBe(404);
   });
 
-  test("returns 404 when no id in path", async () => {
-    const ddb = makeMockDdb([]);
-    const handler = createHandler(ddb);
-    const result = await handler(makeGatewayEvent());
-    expect(result.statusCode).toBe(404);
-    expect(ddb.send).not.toHaveBeenCalled();
-  });
-
   test("propagates unexpected DynamoDB errors", async () => {
     const handler = createHandler(makeMockDdbThrowing());
     await expect(handler(makeGatewayEvent("abc12"))).rejects.toThrow();
@@ -84,5 +92,53 @@ describe("GET /{id}", () => {
     delete process.env.ARTICLES_TABLE;
     const handler = createHandler(makeMockDdb([]));
     await expect(handler(makeGatewayEvent("abc12"))).rejects.toThrow("ARTICLES_TABLE environment variable is not set");
+  });
+});
+
+describe("GET /", () => {
+  beforeEach(() => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+  });
+
+  test("returns home page with article cards", async () => {
+    const handler = createHandler(makeMockDdb([SAMPLE_ITEM]));
+    const result: APIGatewayProxyStructuredResultV2 = await handler(makeGatewayEvent());
+    expect(result.statusCode).toBe(200);
+    expect(result.headers!["Content-Type"]).toBe("text/html; charset=utf-8");
+    expect(result.body).toContain("<title>PulseQ</title>");
+    expect(result.body).toContain('href="/abc12"');
+    expect(result.body).toContain('style="background:#0d9488"');
+    expect(result.body).toContain("How Load Balancers Work");
+  });
+
+  test("queries main table for user1, newest first, limit 30", async () => {
+    const ddb = makeMockDdb([]);
+    const handler = createHandler(ddb);
+    await handler(makeGatewayEvent());
+    const command = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
+    expect(command.input.IndexName).toBeUndefined();
+    expect(command.input.ExpressionAttributeValues).toMatchObject({ ":uid": "user1" });
+    expect(command.input.ScanIndexForward).toBe(false);
+    expect(command.input.Limit).toBe(30);
+  });
+
+  test("renders empty state when no articles", async () => {
+    const handler = createHandler(makeMockDdb([]));
+    const result = await handler(makeGatewayEvent());
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toContain("No articles yet.");
+  });
+
+  test("handles undefined Items in DynamoDB response", async () => {
+    const send = jest.fn().mockResolvedValue({});
+    const ddb = { send } as unknown as DynamoDBDocumentClient;
+    const result = await createHandler(ddb)(makeGatewayEvent());
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toContain("No articles yet.");
+  });
+
+  test("propagates unexpected DynamoDB errors", async () => {
+    const handler = createHandler(makeMockDdbThrowing());
+    await expect(handler(makeGatewayEvent())).rejects.toThrow();
   });
 });

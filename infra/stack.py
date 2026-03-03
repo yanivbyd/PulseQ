@@ -133,12 +133,16 @@ class WriterStack(Stack):
 
         # ── API Gateway HTTP API (web) ───────────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
+        web_integration = integrations.HttpLambdaIntegration("WebIntegration", web_fn)
+        web_api.add_routes(
+            path="/",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=web_integration,
+        )
         web_api.add_routes(
             path="/{id}",
             methods=[apigwv2.HttpMethod.GET],
-            integration=integrations.HttpLambdaIntegration(
-                "WebIntegration", web_fn
-            ),
+            integration=web_integration,
         )
 
         writer_fn.add_environment("WEB_BASE_URL", web_api.api_endpoint)
