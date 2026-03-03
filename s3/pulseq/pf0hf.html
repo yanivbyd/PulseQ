@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloom Filters in Production Systems</title>
+    <link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css">
+    <style>
+      :root { --accent: #008080; }
+      @media (prefers-color-scheme: dark) { :root { --accent: #20B2AA; } }
+    </style>
+</head>
+<body>
+
+<div class="header-card">
+    <h1>Bloom Filters in Production Systems</h1>
+    <p class="byline">PulseQ Daily Brief</p>
+</div>
+
+<div class="section">
+    <h2><span class="icon">🧪</span> Understanding Bloom Filters</h2>
+    <p>Bloom filters are probabilistic data structures used to test whether an element is a member of a set. They're highly space-efficient but allow for false positives, which makes them suitable for use cases where false negatives are not tolerable.</p>
+    
+    <blockquote>Bloom filters can tell you if an element is definitely not in the set, or maybe in the set, which leads to their characteristic trade-off.</blockquote>
+</div>
+
+<div class="section">
+    <h2><span class="icon">🔢</span> False Positive Probability</h2>
+    <h3>Calculating False Positives</h3>
+    <p>The probability of encountering a false positive in a Bloom filter depends on the number of hash functions used and the size of the filter. The formula is:</p>
+    <p class="term"><code>(1 - e^(-kn/m))^k</code></p>
+    <p>Where <code>k</code> is the number of hash functions, <code>n</code> is the number of inserted elements, and <code>m</code> is the size of the bit array.</p>
+
+    <h3>Sizing Your Bloom Filter</h3>
+    <p>Optimal sizing minimizes false positive probability while conserving space. The optimal number of hash functions <code>k</code> is <code>k = (m/n) ln(2)</code>. Practical systems often balance these parameters based on empirical performance observations.</p>
+</div>
+
+<div class="section">
+    <h2><span class="icon">🚀</span> Real-World Use Cases</h2>
+    <p>Bloom filters excel in environments where a small memory footprint is critical but occasional false positives are acceptable. They see widespread use in databases, network caches, and distributed systems.</p>
+
+    <h3>Database Query Optimization</h3>
+    <p>Databases like Bigtable and Cassandra utilize Bloom filters to quickly check whether a key is present in a set of keys, thus saving costly disk reads.</p>
+
+    <h3>Web Caching</h3>
+    <p>In web caching, Bloom filters help determine which URLs should be fetched from a remote server, reducing data center resource consumption and improving load times.</p>
+
+    <h3>Distributed Systems</h3>
+    <p>Tools like Apache Kafka use Bloom filters for deduplication checks and to manage message logs without persistently storing every single message reference, which conserves space.</p>
+
+    <div class="tip">When configuring a Bloom filter, it's crucial to precisely evaluate your use case requirements to select appropriate sizing literature.</div>
+</div>
+
+<div class="section">
+    <h2>Further Reading</h2>
+    <ul>
+        <li><a href="https://en.wikipedia.org/wiki/Bloom_filter" target="_blank">Wikipedia on Bloom Filters</a></li>
+        <li><a href="https://aws.amazon.com/blogs/database/amazon-elasti-cache-for-redis-bloom-filters/" target="_blank">AWS Blog: Bloom Filters with Redis</a></li>
+        <li><a href="https://www.khanacademy.org/computing/computer-science/algorithms/hash-tables/a/bloom-filters" target="_blank">Khan Academy: Bloom Filters</a></li>
+    </ul>
+</div>
+
+</body>
+</html>

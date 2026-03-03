@@ -6,6 +6,8 @@ from aws_cdk import (
     Stack,
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as integrations,
+    aws_cloudfront as cloudfront,
+    aws_cloudfront_origins as cf_origins,
     aws_lambda as _lambda,
     aws_lambda_nodejs as nodejs,
     aws_s3 as s3,
@@ -26,19 +28,12 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # ── S3: output (public static website) ─────────────────────────────
+        # ── S3: output (private — served via CloudFront) ────────────────────
         output_bucket = s3.Bucket(
             self,
             "OutputBucket",
             bucket_name="pulseq",
-            website_index_document="index.html",
-            public_read_access=True,
-            block_public_access=s3.BlockPublicAccess(
-                block_public_acls=False,
-                block_public_policy=False,
-                ignore_public_acls=False,
-                restrict_public_buckets=False,
-            ),
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.RETAIN,
         )
 
@@ -132,3 +127,15 @@ class WriterStack(Stack):
         writer_fn.add_environment("WEB_BASE_URL", web_api.api_endpoint)
 
         CfnOutput(self, "WebUrl", value=web_api.api_endpoint)
+
+        # ── CloudFront: serves style.css over HTTPS ──────────────────────────
+        distribution = cloudfront.Distribution(
+            self,
+            "StyleDistribution",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=cf_origins.S3BucketOrigin.with_origin_access_control(output_bucket),
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            ),
+        )
+
+        CfnOutput(self, "CssUrl", value=f"https://{distribution.domain_name}/style.css")

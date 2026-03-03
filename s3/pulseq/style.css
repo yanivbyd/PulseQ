@@ -133,6 +133,9 @@ code {
 
 strong { font-weight: 700; }
 
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+a:hover { opacity: 0.8; }
+
 /* ── Pros / Cons ── */
 .pros-cons {
   display: grid;

@@ -11,7 +11,7 @@ Output raw HTML only — no markdown, no code fences, no explanation. The respon
 The shared stylesheet (`docs/style.css`) defines all CSS custom properties and component styles. The only per-article CSS override is the accent color — set it in an inline `<style>` block:
 
 ```html
-<link rel="stylesheet" href="http://pulseq.s3-website.eu-west-1.amazonaws.com/style.css">
+<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css">
 <style>
   :root { --accent: #your-color; }
   @media (prefers-color-scheme: dark) { :root { --accent: #your-dark-color; } }
