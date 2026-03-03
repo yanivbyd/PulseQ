@@ -54,10 +54,17 @@ def _make_s3_client(topics=None):
     return s3
 
 
+SAMPLE_FRAGMENT = (
+    "<style>:root { --accent: #0d9488; }</style>\n"
+    '<div class="header-card"><h1>How Load Balancers Work</h1></div>\n'
+    '<div class="section"><p>Content.</p></div>'
+)
+
+
 def _fake_run(base_dir, docs_dir, topic):
-    """Simulate writer.run() creating one HTML file."""
+    """Simulate writer.run() creating one HTML fragment file."""
     docs_dir.mkdir(exist_ok=True)
-    (docs_dir / "abc12.html").write_text("<html><head><title>How Load Balancers Work</title></head></html>")
+    (docs_dir / "abc12.html").write_text(SAMPLE_FRAGMENT)
 
 
 # ---------------------------------------------------------------------------
@@ -252,3 +259,13 @@ class TestLambdaHandler:
 
         assert result["statusCode"] == 500
         assert "No HTML output produced" in json.loads(result["body"])["error"]
+
+
+class TestExtractTitle:
+    def test_extracts_title_from_h1(self):
+        from writer.lambda_handler import _extract_title
+        assert _extract_title('<h1>How Load Balancers Work</h1>') == "How Load Balancers Work"
+
+    def test_falls_back_when_no_h1(self):
+        from writer.lambda_handler import _extract_title
+        assert _extract_title('<div class="section"><p>No heading here.</p></div>') == "New Article"

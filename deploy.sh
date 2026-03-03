@@ -9,7 +9,10 @@ echo "==> Running Python tests"
 echo "==> Running Node.js tests"
 (cd "$REPO_ROOT/web_server" && npm test)
 
-echo "==> All tests passed — deploying"
+echo "==> Uploading inputs to S3"
+aws s3 sync "$REPO_ROOT/s3/pulseq-inputs/" s3://pulseq-inputs/ --region eu-west-1
+
+echo "==> Deploying infrastructure"
 (cd "$REPO_ROOT/infra" && source .venv/bin/activate && cdk deploy --require-approval never)
 
 echo "==> Syncing style.css to S3"

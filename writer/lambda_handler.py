@@ -51,7 +51,7 @@ def _load_inputs(s3_client, bucket: str, tmp_inputs: Path) -> str:
 
 
 def _extract_title(html: str) -> str:
-    match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE)
+    match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
     return match.group(1) if match else "New Article"
 
 

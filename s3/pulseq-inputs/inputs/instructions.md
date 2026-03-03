@@ -1,17 +1,16 @@
-# HTML Generation Instructions
+# HTML Fragment Generation Instructions
 
-You are generating an HTML article page for PulseQ — a daily AI and tech news brief. The output must be a complete, valid HTML5 document. It references the shared `style.css` stylesheet (provided below) and adds no additional CSS beyond the per-article accent color override. No JavaScript.
+You are generating an HTML article fragment for PulseQ — a daily AI and tech news brief. The output is an HTML body fragment, **not** a full document. No `<!DOCTYPE>`, no `<html>`, no `<head>`, no `<body>` tags.
 
-Output raw HTML only — no markdown, no code fences, no explanation. The response must start with `<!DOCTYPE html>` and nothing else.
+Output raw HTML only — no markdown, no code fences, no backticks, no explanation. Do not wrap the output in ` ```html ` or any other block. The response must start with a `<style>` block and nothing else.
 
 ---
 
 ## Color and Theming
 
-The shared stylesheet (`docs/style.css`) defines all CSS custom properties and component styles. The only per-article CSS override is the accent color — set it in an inline `<style>` block:
+The shared stylesheet defines all CSS custom properties and component styles. The only per-article CSS override is the accent color — set it in a `<style>` block at the very start of the fragment:
 
 ```html
-<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css">
 <style>
   :root { --accent: #your-color; }
   @media (prefers-color-scheme: dark) { :root { --accent: #your-dark-color; } }
@@ -60,12 +59,10 @@ The stylesheet constraints stay fixed. Everything else can breathe.
 
 ---
 
-## Meta
+## Structure
 
-- `<title>` must match the article's `<h1>`
-- `lang="en"` on `<html>`
-- `charset="UTF-8"` and `viewport` meta tags required
-- Byline is always "PulseQ Daily Brief"
+- `<h1>` must be the article title; it is used as the page title by the server
+- Byline is always `<p class="byline">PulseQ Daily Brief</p>` inside the `.header-card`
 - No links, no navigation, no footer — just the article, with one exception: the Further Reading section below.
 
 ---

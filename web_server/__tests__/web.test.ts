@@ -1,4 +1,4 @@
-import { createHandler } from "../index";
+import { createHandler, extractTitle, buildShell } from "../index";
 import { GetObjectCommand, NoSuchKey, S3Client } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
@@ -36,18 +36,40 @@ function makeMockS3Throwing(errorName: string) {
   return { send } as unknown as S3Client;
 }
 
+const SAMPLE_FRAGMENT = `<style>
+  :root { --accent: #0d9488; }
+</style>
+<div class="header-card">
+  <h1>How Load Balancers Work</h1>
+  <p class="byline">PulseQ Daily Brief</p>
+</div>
+<div class="section"><p>Content here.</p></div>`;
+
+describe("extractTitle", () => {
+  test("extracts title from h1 tag", () => {
+    expect(extractTitle("<h1>My Article</h1>")).toBe("My Article");
+  });
+
+  test("falls back to PulseQ when no h1 is present", () => {
+    expect(extractTitle("<div>no heading here</div>")).toBe("PulseQ");
+  });
+});
+
 describe("web handler", () => {
   beforeEach(() => {
     process.env.WEB_BUCKET = "test-bucket";
   });
 
-  test("returns HTML with correct content-type for a valid id", async () => {
-    const s3 = makeMockS3([{ bucket: "test-bucket", key: "abc12.html", fileContents: "<html>article</html>" }]);
+  test("returns assembled HTML with correct content-type for a valid id", async () => {
+    const s3 = makeMockS3([{ bucket: "test-bucket", key: "abc12.html", fileContents: SAMPLE_FRAGMENT }]);
     const handler = createHandler(s3);
     const result: APIGatewayProxyStructuredResultV2 = await handler(makeGatewayEvent("abc12"));
     expect(result.statusCode).toBe(200);
     expect(result.headers!["Content-Type"]).toBe("text/html; charset=utf-8");
-    expect(result.body).toBe("<html>article</html>");
+    expect(result.body).toContain("<!DOCTYPE html>");
+    expect(result.body).toContain('<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css">');
+    expect(result.body).toContain("<title>How Load Balancers Work</title>");
+    expect(result.body).toContain(SAMPLE_FRAGMENT);
     expect(s3.send).toHaveBeenCalledTimes(1);
   });
 
