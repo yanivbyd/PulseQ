@@ -8,6 +8,7 @@ from aws_cdk import (
     aws_apigatewayv2_integrations as integrations,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as cf_origins,
+    aws_dynamodb as dynamodb,
     aws_lambda as _lambda,
     aws_lambda_nodejs as nodejs,
     aws_s3 as s3,
@@ -35,6 +36,22 @@ class WriterStack(Stack):
             bucket_name="pulseq",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.RETAIN,
+        )
+
+        # ── DynamoDB: articles ───────────────────────────────────────────────
+        articles_table = dynamodb.Table(
+            self,
+            "ArticlesTable",
+            table_name="pulseq-articles",
+            partition_key=dynamodb.Attribute(name="userid", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="creation_timestamp", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+        articles_table.add_global_secondary_index(
+            index_name="ById",
+            partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
+            projection_type=dynamodb.ProjectionType.ALL,
         )
 
         # ── Secrets Manager ─────────────────────────────────────────────────
@@ -72,17 +89,17 @@ class WriterStack(Stack):
             timeout=Duration.minutes(5),
             environment={
                 "INPUT_BUCKET": input_bucket.bucket_name,
-                "OUTPUT_BUCKET": output_bucket.bucket_name,
                 "SECRET_NAME": secret.secret_name,
                 "IFTTT_SECRET_NAME": ifttt_secret.secret_name,
+                "ARTICLES_TABLE": articles_table.table_name,
             },
         )
 
         # ── IAM permissions ─────────────────────────────────────────────────
         input_bucket.grant_read(writer_fn)
-        output_bucket.grant_put(writer_fn)
         secret.grant_read(writer_fn)
         ifttt_secret.grant_read(writer_fn)
+        articles_table.grant(writer_fn, "dynamodb:PutItem")
 
         # ── API Gateway HTTP API (writer) ────────────────────────────────────
         http_api = apigwv2.HttpApi(self, "WriterApi")
@@ -96,7 +113,7 @@ class WriterStack(Stack):
 
         CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")
 
-        # ── Web Lambda (Node.js — serves articles from S3) ──────────────────
+        # ── Web Lambda (Node.js — serves articles from DynamoDB) ────────────
         web_fn = nodejs.NodejsFunction(
             self,
             "WebFunction",
@@ -106,13 +123,13 @@ class WriterStack(Stack):
             architecture=_lambda.Architecture.ARM_64,
             timeout=Duration.seconds(10),
             environment={
-                "WEB_BUCKET": output_bucket.bucket_name,
+                "ARTICLES_TABLE": articles_table.table_name,
             },
             bundling=nodejs.BundlingOptions(
                 external_modules=["@aws-sdk/*"],
             ),
         )
-        output_bucket.grant_read(web_fn)
+        articles_table.grant(web_fn, "dynamodb:Query")
 
         # ── API Gateway HTTP API (web) ───────────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
