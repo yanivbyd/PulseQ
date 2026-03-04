@@ -41,6 +41,12 @@ This is PulseQ, an autonomous modular AI system that delivers daily personalized
 - All new code must be covered. Uncovered lines must be either tested or explicitly justified
 - Prefer fewer, broader tests over many narrow ones. If a single test can assert multiple related behaviours without obscuring intent, merge them. Only use separate tests when the failure modes are meaningfully distinct and a combined test would hide which behaviour broke.
 
+## Spec Compliance
+
+- Code must faithfully implement the finalized spec — no undocumented additions or deviations.
+- If coding reveals a new one-way-door decision, or requires an API/schema change not covered by the spec: stop, add a question to the spec, and wait for the user to answer before continuing.
+- If a two-way-door improvement is spotted during coding, briefly propose it first — don't just do it.
+
 ## Specification Workflow
 
 Specifications are developed iteratively through collaboration:

@@ -29,11 +29,11 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # ── S3: output (private — served via CloudFront) ────────────────────
-        output_bucket = s3.Bucket(
+        # ── S3: React SPA (private — served via CloudFront) ─────────────────
+        frontend_bucket = s3.Bucket(
             self,
-            "OutputBucket",
-            bucket_name="pulseq",
+            "FrontendBucket",
+            bucket_name="pulseq-frontend",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.RETAIN,
         )
@@ -68,7 +68,7 @@ class WriterStack(Stack):
             "pulseq/ifttt-key",
         )
 
-        # ── Writer Lambda ──────────────────────────────────────────────────────────
+        # ── Writer Lambda ────────────────────────────────────────────────────
         writer_fn = _lambda.Function(
             self,
             "WriterFunction",
@@ -113,11 +113,11 @@ class WriterStack(Stack):
 
         CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")
 
-        # ── Web Lambda (Node.js — serves articles from DynamoDB) ────────────
+        # ── Backend Lambda (Node.js — JSON API for articles) ─────────────────
         web_fn = nodejs.NodejsFunction(
             self,
             "WebFunction",
-            entry="../web_server/index.ts",
+            entry="../backend/index.ts",
             handler="handler",
             runtime=_lambda.Runtime.NODEJS_22_X,
             architecture=_lambda.Architecture.ARM_64,
@@ -131,32 +131,58 @@ class WriterStack(Stack):
         )
         articles_table.grant(web_fn, "dynamodb:Query")
 
-        # ── API Gateway HTTP API (web) ───────────────────────────────────────
+        # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
         web_integration = integrations.HttpLambdaIntegration("WebIntegration", web_fn)
         web_api.add_routes(
-            path="/",
+            path="/api/article-summaries",
             methods=[apigwv2.HttpMethod.GET],
             integration=web_integration,
         )
         web_api.add_routes(
-            path="/{id}",
+            path="/api/article/{proxy+}",
             methods=[apigwv2.HttpMethod.GET],
             integration=web_integration,
         )
 
-        writer_fn.add_environment("WEB_BASE_URL", web_api.api_endpoint)
+        # ── CloudFront: unified distribution (SPA + API) ─────────────────────
+        api_domain = f"{web_api.api_id}.execute-api.eu-west-1.amazonaws.com"
 
-        CfnOutput(self, "WebUrl", value=web_api.api_endpoint)
-
-        # ── CloudFront: serves style.css over HTTPS ──────────────────────────
-        distribution = cloudfront.Distribution(
+        frontend_distribution = cloudfront.Distribution(
             self,
-            "StyleDistribution",
+            "FrontendDistribution",
+            default_root_object="index.html",
             default_behavior=cloudfront.BehaviorOptions(
-                origin=cf_origins.S3BucketOrigin.with_origin_access_control(output_bucket),
+                origin=cf_origins.S3BucketOrigin.with_origin_access_control(frontend_bucket),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
             ),
+            additional_behaviors={
+                "/api/*": cloudfront.BehaviorOptions(
+                    origin=cf_origins.HttpOrigin(
+                        api_domain,
+                        protocol_policy=cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+                    ),
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+                ),
+            },
+            error_responses=[
+                cloudfront.ErrorResponse(
+                    http_status=403,
+                    response_http_status=200,
+                    response_page_path="/index.html",
+                ),
+                cloudfront.ErrorResponse(
+                    http_status=404,
+                    response_http_status=200,
+                    response_page_path="/index.html",
+                ),
+            ],
         )
 
-        CfnOutput(self, "CssUrl", value=f"https://{distribution.domain_name}/style.css")
+        writer_fn.add_environment("WEB_BASE_URL", f"https://{frontend_distribution.domain_name}")
+
+        CfnOutput(self, "FrontendUrl", value=f"https://{frontend_distribution.domain_name}")
+        CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)

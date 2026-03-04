@@ -4,13 +4,13 @@ PulseQ is an autonomous, modular AI system that delivers a daily personalized te
 
 ## Writer Agent
 
-The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-4o, writes a styled HTML article to the `pulseq` S3 bucket, warms up the web server, and sends an iOS push notification with the article URL.
+The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-4o, stores the article in DynamoDB, and sends an iOS push notification with the article URL.
 
 ### Trigger
 
 ```bash
 curl -X POST https://3mlilr6w93.execute-api.eu-west-1.amazonaws.com/run
-# → {"url": "https://<web-api-id>.execute-api.eu-west-1.amazonaws.com/<id>"}
+# → {"url": "https://<cloudfront-domain>/<article-id>"}
 ```
 
 ### Input files
@@ -29,12 +29,9 @@ Stored in S3 under `s3://pulseq-inputs/inputs/`. The `s3/pulseq-inputs/` directo
 # Push local changes to S3
 bash s3/upload.sh
 
-# Pull S3 state back to local (e.g. after a run produces new output)
+# Pull S3 state back to local
 bash s3/download.sh
 ```
-
-`upload.sh` syncs both `s3/pulseq-inputs/` → `s3://pulseq-inputs/` and `s3/pulseq/` → `s3://pulseq/`.
-`download.sh` does the reverse.
 
 ### Typical workflow
 
@@ -42,20 +39,44 @@ bash s3/download.sh
 2. Run `bash s3/upload.sh` to push inputs to S3
 3. Trigger the Lambda: `curl -X POST <writer-api-url>/run`
 4. Open the returned URL to review the article
-5. Run `bash s3/download.sh` to pull the generated HTML into `s3/pulseq/`
-6. Update `s3/pulseq-inputs/inputs/history.md` with the new article title, then upload again
+5. Update `s3/pulseq-inputs/inputs/history.md` with the new article title, then upload again
 
-### Shared stylesheet
+## Frontend
 
-`s3/pulseq/style.css` is the shared stylesheet referenced by all generated pages. It lives in the `pulseq` bucket and is served directly from the S3 static website URL.
+A React SPA (Vite + React Router) served from S3 via CloudFront.
 
-## Web Server
+- **Home** (`/`): lists recent articles as accent-coloured cards
+- **Article** (`/:id`): renders the article
 
-A Node.js 22.x Lambda serves generated articles at `GET /<id>`. It reads the corresponding HTML file from the `pulseq` S3 bucket and returns it. After the writer Lambda uploads a new article, it pre-warms the web Lambda before sending the notification so the page loads immediately when you tap through.
+### Local development
+
+```bash
+cd frontend
+npm install
+
+# Create a .env.local pointing at the deployed CloudFront domain:
+echo "VITE_API_PROXY_TARGET=https://<cloudfront-domain>" > .env.local
+echo "VITE_USER_ID=user1" >> .env.local
+
+npm run dev   # → http://localhost:5173
+```
+
+The Vite dev server proxies `/api/*` to the deployed Lambda so the UI is fully functional locally.
+
+## Backend
+
+A Node.js 22.x Lambda serving a JSON API for articles.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/article-summaries?userId=<id>` | List of article metadata (no HTML) |
+| `GET /api/article/:articleId` | Full article including generated HTML |
+
+CloudFront routes `/api/*` to this Lambda and `/*` to the S3-hosted React SPA.
 
 ## Infrastructure
 
-CDK stack is in `infra/`. It provisions the two S3 buckets, Secrets Manager secrets, writer Lambda, web Lambda, and two API Gateways.
+CDK stack is in `infra/`. It provisions S3 buckets, DynamoDB, Secrets Manager secrets, writer Lambda, backend Lambda, two API Gateways, and a unified CloudFront distribution.
 
 ### Deploy
 
@@ -65,6 +86,12 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cdk synth          # smoke-test — prints CloudFormation template, no AWS changes
 cdk deploy         # creates all resources in eu-west-1
+```
+
+The full deploy script (tests → CDK → frontend build → S3 sync → CloudFront invalidation):
+
+```bash
+bash deploy.sh
 ```
 
 ### After first deploy
@@ -83,41 +110,36 @@ aws secretsmanager put-secret-value \
   --region eu-west-1
 ```
 
-The IFTTT webhook key is the key from `https://ifttt.com/maker_webhooks` → Documentation.
-
 Upload input files to S3:
 
 ```bash
 bash s3/upload.sh
 ```
 
-## Deploy
-
-Runs all tests and, if they pass, deploys to AWS:
+## Running Tests
 
 ```bash
-bash deploy.sh
-```
-
-## Running Tests Individually
-
-```bash
-# Python (writer + lambda handler)
+# Python (writer Lambda)
 .venv/bin/pytest writer/tests/ --cov=writer --cov-report=term-missing
 
-# Node.js (web server) — first install deps once: npm install
-cd web_server && npm test
+# Backend (Node.js JSON API) — install deps once: npm install
+cd backend && npm test
+
+# Frontend (React SPA) — install deps once: npm install
+cd frontend && npm test
 ```
 
 ## Tech Stack
 
-- **Languages**: Python (writer Lambda), Node.js 22.x (web Lambda)
+- **Languages**: Python (writer Lambda), TypeScript / Node.js 22.x (backend Lambda), TypeScript + React (frontend)
 - **AI Provider**: OpenAI API (GPT-4o)
-- **Compute**: AWS Lambda — Python 3.12 (writer), Node.js 22.x (web)
+- **Frontend**: Vite + React Router, CSS Modules
+- **Compute**: AWS Lambda — Python 3.12 (writer), Node.js 22.x (backend)
+- **Hosting**: CloudFront — unified distribution for SPA (`/*`) and JSON API (`/api/*`)
+- **Storage**: DynamoDB (`pulseq-articles`), S3 (`pulseq-inputs`, `pulseq-frontend`)
 - **IaC**: AWS CDK (Python), region `eu-west-1`
 - **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`, `pulseq/ifttt-key`)
 - **Notifications**: IFTTT Webhooks → IFTTT iPhone app
-- **Storage**: S3 — `pulseq-inputs` (inputs), `pulseq` (generated HTML + stylesheet)
 
 ## iOS Push Notifications
 

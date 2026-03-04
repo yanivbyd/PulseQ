@@ -115,8 +115,10 @@ class TestLambdaHandler:
         assert item["html"] == SAMPLE_ARTICLE["html"]
         assert isinstance(item["creation_timestamp"], str)
 
-        # warm-up + notification
+        # warm-up calls the article API endpoint, notification uses the React app URL
         assert mock_urlopen.call_count == 2
+        warmup_url = mock_urlopen.call_args_list[0].args[0]
+        assert warmup_url == "https://test-web.execute-api.eu-west-1.amazonaws.com/api/article/abc12"
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")

@@ -111,14 +111,15 @@ def handler(event, context):
     except Exception as e:
         return {"statusCode": 500, "body": json.dumps({"error": f"Failed to save article: {e}"})}
 
-    url = f"{os.environ['WEB_BASE_URL']}/{article['id']}"
+    article_url = f"{os.environ['WEB_BASE_URL']}/{article['id']}"
+    warmup_url = f"{os.environ['WEB_BASE_URL']}/api/article/{article['id']}"
 
-    _warm_up(url)
+    _warm_up(warmup_url)
 
     try:
-        _send_notification(url, article["title"])
+        _send_notification(article_url, article["title"])
     except Exception as e:
         # Non-fatal — article was written successfully, notification is best-effort
         print(f"Warning: failed to send notification: {e}")
 
-    return {"statusCode": 200, "body": json.dumps({"url": url})}
+    return {"statusCode": 200, "body": json.dumps({"url": article_url})}

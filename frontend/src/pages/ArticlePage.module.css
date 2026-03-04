@@ -1,0 +1,35 @@
+.wrapper {
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.fab {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  width: 3rem;
+  height: 3rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1.3rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.fab:hover { opacity: 0.8; }
+
+.status {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}

@@ -1,0 +1,17 @@
+.container {
+  max-width: 680px;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.container h1 {
+  font-size: 4rem;
+  margin-bottom: 0.5rem;
+}
+
+.container a {
+  display: inline-block;
+  margin-top: 1.5rem;
+}
