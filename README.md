@@ -54,14 +54,14 @@ A React SPA (Vite + React Router) served from S3 via CloudFront.
 cd frontend
 npm install
 
-# Create a .env.local pointing at the deployed CloudFront domain:
-echo "VITE_API_PROXY_TARGET=https://<cloudfront-domain>" > .env.local
-echo "VITE_USER_ID=user1" >> .env.local
+# Create a .env file (already committed as .env — edit if needed):
+# VITE_USER_ID=user1
+# VITE_API_PROXY_TARGET=https://dvfy0u2uikiwg.cloudfront.net
 
 npm run dev   # → http://localhost:5173
 ```
 
-The Vite dev server proxies `/api/*` to the deployed Lambda so the UI is fully functional locally.
+The Vite dev server proxies `/api/*` to the deployed CloudFront/Lambda so the UI is fully functional locally.
 
 ## Backend
 

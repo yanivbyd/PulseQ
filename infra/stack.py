@@ -1,3 +1,5 @@
+import json
+
 from aws_cdk import (
     BundlingOptions,
     CfnOutput,
@@ -9,9 +11,11 @@ from aws_cdk import (
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as cf_origins,
     aws_dynamodb as dynamodb,
+    aws_iam as iam,
     aws_lambda as _lambda,
     aws_lambda_nodejs as nodejs,
     aws_s3 as s3,
+    aws_scheduler as scheduler,
     aws_secretsmanager as sm,
 )
 from constructs import Construct
@@ -193,3 +197,36 @@ class WriterStack(Stack):
 
         CfnOutput(self, "FrontendUrl", value=f"https://{frontend_distribution.domain_name}")
         CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)
+
+        # ── Daily scheduler: invoke Writer Lambda at 08:00 Asia/Jerusalem ────
+        scheduler_role = iam.Role(
+            self,
+            "SchedulerRole",
+            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
+            inline_policies={
+                "InvokeWriter": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            actions=["lambda:InvokeFunction"],
+                            resources=[writer_fn.function_arn],
+                        )
+                    ]
+                )
+            },
+        )
+
+        scheduler.CfnSchedule(
+            self,
+            "DailyWriterSchedule",
+            schedule_expression="cron(0 8 * * ? *)",
+            schedule_expression_timezone="Asia/Jerusalem",
+            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
+                mode="FLEXIBLE",
+                maximum_window_in_minutes=30,
+            ),
+            target=scheduler.CfnSchedule.TargetProperty(
+                arn=writer_fn.function_arn,
+                role_arn=scheduler_role.role_arn,
+                input=json.dumps({"userid": "user1"}),
+            ),
+        )
