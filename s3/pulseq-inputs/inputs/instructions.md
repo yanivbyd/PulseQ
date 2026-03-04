@@ -2,7 +2,7 @@
 
 You are generating an HTML article fragment for PulseQ — a daily AI and tech news brief. The output is an HTML body fragment, **not** a full document. No `<!DOCTYPE>`, no `<html>`, no `<head>`, no `<body>` tags.
 
-Output raw HTML only — no markdown, no code fences, no backticks, no explanation. Do not wrap the output in ` ```html ` or any other block. The response must start with a `<style>` block and nothing else.
+Output raw HTML only. The very first character of your response must be `<`. Do not output anything before the opening `<style>` tag — no backticks, no ` ```html `, no code fences, no explanation, no preamble of any kind. If your response does not begin with `<style>`, it is wrong.
 
 ---
 

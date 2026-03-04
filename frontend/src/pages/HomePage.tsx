@@ -1,12 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, triggerGenerate, type ArticleSummary } from "../api";
 import styles from "./HomePage.module.css";
+
+type GenerateState = "idle" | "generating" | "cooldown";
 
 export default function HomePage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generateState, setGenerateState] = useState<GenerateState>("idle");
+  const [generateError, setGenerateError] = useState(false);
+  const cooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // VITE_USER_ID is statically substituted by Vite at build time; this guard
@@ -24,14 +29,28 @@ export default function HomePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    return () => { if (cooldownTimer.current) clearTimeout(cooldownTimer.current); };
+  }, []);
+
+  async function handleGenerate() {
+    setGenerateState("generating");
+    setGenerateError(false);
+    try {
+      await triggerGenerate();
+    } catch {
+      setGenerateError(true);
+    }
+    setGenerateState("cooldown");
+    cooldownTimer.current = setTimeout(() => setGenerateState("idle"), 60_000);
+  }
+
   if (loading) return <div className={styles.status}>Loading...</div>;
   if (error) return <div className={styles.status}>{error}</div>;
 
   return (
     <main className={styles.container}>
-      <div className={styles.header}>
-        <h1>PulseQ</h1>
-      </div>
+      <h1 className={styles.header}>PulseQ</h1>
       <div className={styles.list}>
         {articles.length === 0
           ? <p className={styles.empty}>No articles yet.</p>
@@ -46,6 +65,23 @@ export default function HomePage() {
               </Link>
             ))
         }
+      </div>
+      <hr className={styles.divider} />
+      <div className={styles.generateSection}>
+        <button
+          className={styles.generateBtn}
+          disabled={generateState !== "idle"}
+          onClick={handleGenerate}
+        >
+          {generateState === "generating" ? "Generating…" : "Generate New Article"}
+        </button>
+        {generateState !== "idle" && (
+          <p className={styles.generateMsg}>
+            {generateError
+              ? "Something went wrong. Try again in a minute."
+              : "Generating… you'll get a notification when it's ready."}
+          </p>
+        )}
       </div>
     </main>
   );

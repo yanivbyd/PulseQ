@@ -130,6 +130,8 @@ class WriterStack(Stack):
             ),
         )
         articles_table.grant(web_fn, "dynamodb:Query")
+        writer_fn.grant_invoke(web_fn)
+        web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
@@ -142,6 +144,11 @@ class WriterStack(Stack):
         web_api.add_routes(
             path="/api/article/{proxy+}",
             methods=[apigwv2.HttpMethod.GET],
+            integration=web_integration,
+        )
+        web_api.add_routes(
+            path="/api/generate",
+            methods=[apigwv2.HttpMethod.POST],
             integration=web_integration,
         )
 
@@ -165,7 +172,7 @@ class WriterStack(Stack):
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                     cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                     origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-                    allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                 ),
             },
             error_responses=[

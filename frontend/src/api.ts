@@ -20,3 +20,8 @@ export async function fetchArticle(articleId: string): Promise<Article> {
   if (!res.ok) throw new Error(`Failed to fetch article: ${res.status}`);
   return res.json();
 }
+
+export async function triggerGenerate(): Promise<void> {
+  const res = await fetch("/api/generate", { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to generate: ${res.status}`);
+}

@@ -1,5 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
 function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructuredResultV2 {
@@ -10,12 +11,27 @@ function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructu
   };
 }
 
-export function createHandler(ddbClient: DynamoDBDocumentClient) {
+export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: LambdaClient) {
   return async function (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
     const tableName = process.env.ARTICLES_TABLE;
     if (!tableName) throw new Error("ARTICLES_TABLE environment variable is not set");
 
     const path = event.rawPath ?? "";
+    const method = event.requestContext?.http?.method;
+
+    if (path === "/api/generate" && method === "POST") {
+      const writerArn = process.env.WRITER_FUNCTION_ARN;
+      if (!writerArn) return jsonResponse(500, { error: "WRITER_FUNCTION_ARN is not configured" });
+      try {
+        await lambdaClient.send(new InvokeCommand({
+          FunctionName: writerArn,
+          InvocationType: "Event",
+        }));
+        return jsonResponse(202, { status: "generating" });
+      } catch {
+        return jsonResponse(500, { error: "Failed to invoke writer" });
+      }
+    }
 
     if (path === "/api/article-summaries") {
       const userId = event.queryStringParameters?.userId;
@@ -59,4 +75,5 @@ export function createHandler(ddbClient: DynamoDBDocumentClient) {
 }
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: "eu-west-1" }));
-export const handler = createHandler(ddb);
+const lambda = new LambdaClient({ region: "eu-west-1" });
+export const handler = createHandler(ddb, lambda);

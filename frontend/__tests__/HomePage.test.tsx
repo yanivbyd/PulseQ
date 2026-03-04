@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import HomePage from "../src/pages/HomePage";
 import * as api from "../src/api";
@@ -37,3 +38,45 @@ test("renders error message on fetch failure", async () => {
   await waitFor(() => expect(screen.getByText("Network error")).toBeInTheDocument());
 });
 
+describe("Generate Article button", () => {
+  beforeEach(() => {
+    vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
+  });
+
+  test("button is in idle state on load", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate New Article" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Generate New Article" })).not.toBeDisabled();
+  });
+
+  test("clicking button disables it and shows notification message on success", async () => {
+    vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
+    renderPage();
+    await waitFor(() => screen.getByRole("button", { name: "Generate New Article" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    await waitFor(() => expect(screen.getByRole("button")).toBeDisabled());
+    expect(screen.getByText(/you'll get a notification/)).toBeInTheDocument();
+  });
+
+  test("shows error message and keeps button disabled on failure", async () => {
+    vi.mocked(api.triggerGenerate).mockRejectedValue(new Error("Server error"));
+    renderPage();
+    await waitFor(() => screen.getByRole("button", { name: "Generate New Article" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    await waitFor(() => expect(screen.getByText(/Something went wrong/)).toBeInTheDocument());
+    expect(screen.getByRole("button")).toBeDisabled();
+  });
+
+  test("button re-enables after 60 seconds", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
+    renderPage();
+    await act(async () => {}); // flush fetchArticleSummaries + React state
+    fireEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    await act(async () => {}); // flush triggerGenerate promise + state updates
+    expect(screen.getByRole("button")).toBeDisabled();
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByRole("button", { name: "Generate New Article" })).not.toBeDisabled();
+    vi.useRealTimers();
+  });
+});

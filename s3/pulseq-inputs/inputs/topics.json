@@ -1,20 +1,32 @@
 {
   "topics": [
     {
-      "title": "N+1 Query Problem at Scale",
-      "description": "Detection patterns, batching strategies."
-    },
-    {
       "title": "How Connection Pooling Works",
       "description": "Pool sizing math, queueing effects, saturation signals."
     },
     {
-      "title": "Bloom Filters in Production Systems",
-      "description": "False positive math, sizing formula, real-world use cases."
-    },
-    {
       "title": "How Distributed Locks Work (and Fail)",
       "description": "Redis Redlock debate, lease-based locks, fencing tokens"
+    },
+    {
+      "title": "How the Linux Kernel Handles System Calls",
+      "description": "User → kernel transitions, syscall tables, context switching, and security checks.."
+    },
+    {
+      "title": "How Epoll Enables High-Performance Networking",
+      "description": "Why select/poll don’t scale and how epoll solves the problem"
+    },
+    {
+      "title": "RCU (Read-Copy-Update) Explained",
+      "description": "One of the most elegant concurrency mechanisms used heavily in the Linux kernel."
+    },
+    {
+      "title": "Per-CPU Data Structures",
+      "description": "How the kernel avoids contention by sharding state per CPU."
+    },
+    {
+      "title": "How the Linux Kernel Handles Interrupts",
+      "description": "How the Linux kernel handles interrupts, including hardware interrupts and software interrupts."
     }
   ]
 }

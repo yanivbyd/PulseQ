@@ -1,4 +1,4 @@
-import { fetchArticleSummaries, fetchArticle } from "../src/api";
+import { fetchArticleSummaries, fetchArticle, triggerGenerate } from "../src/api";
 
 const SUMMARIES = [
   { id: "abc12", title: "How Load Balancers Work", accent: "#0d9488", creation_timestamp: "2026-03-01T00:00:00.000Z" },
@@ -41,5 +41,18 @@ describe("fetchArticle", () => {
   test("throws on 404", async () => {
     mockFetch(false, undefined, 404);
     await expect(fetchArticle("missing")).rejects.toThrow("404");
+  });
+});
+
+describe("triggerGenerate", () => {
+  test("sends POST /api/generate and resolves on 202", async () => {
+    mockFetch(true, { status: "generating" }, 202);
+    await expect(triggerGenerate()).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledWith("/api/generate", { method: "POST" });
+  });
+
+  test("throws on 5xx", async () => {
+    mockFetch(false, undefined, 500);
+    await expect(triggerGenerate()).rejects.toThrow("500");
   });
 });
