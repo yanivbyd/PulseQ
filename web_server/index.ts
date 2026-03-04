@@ -2,7 +2,7 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
-const CSS_URL = "https://d1vjqvihd6azy3.cloudfront.net/style.css?v=2";
+const CSS_URL = "https://d1vjqvihd6azy3.cloudfront.net/style.css?v=3";
 const USER_ID = "user1";
 
 export function buildShell(title: string, fragment: string): string {
@@ -64,10 +64,11 @@ export function createHandler(ddbClient: DynamoDBDocumentClient) {
     }
 
     const item = result.Items[0];
+    const fab = `<a href="/" class="home-fab" aria-label="Home">←</a>`;
     return {
       statusCode: 200,
       headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: buildShell(item.title as string, item.html as string),
+      body: buildShell(item.title as string, `${fab}\n${item.html as string}`),
     };
   };
 }

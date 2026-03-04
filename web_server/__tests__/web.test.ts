@@ -31,7 +31,7 @@ describe("buildShell", () => {
     const html = buildShell("My Title", "<p>body</p>");
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<title>My Title</title>");
-    expect(html).toContain('<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css?v=2">');
+    expect(html).toContain('<link rel="stylesheet" href="https://d1vjqvihd6azy3.cloudfront.net/style.css?v=3">');
     expect(html).toContain("<p>body</p>");
   });
 });
@@ -57,7 +57,7 @@ describe("GET /{id}", () => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
   });
 
-  test("returns assembled HTML for a valid id", async () => {
+  test("returns assembled HTML for a valid id, with home FAB", async () => {
     const handler = createHandler(makeMockDdb([SAMPLE_ITEM]));
     const result: APIGatewayProxyStructuredResultV2 = await handler(makeGatewayEvent("abc12"));
     expect(result.statusCode).toBe(200);
@@ -65,6 +65,8 @@ describe("GET /{id}", () => {
     expect(result.body).toContain("<!DOCTYPE html>");
     expect(result.body).toContain("<title>How Load Balancers Work</title>");
     expect(result.body).toContain(SAMPLE_ITEM.html);
+    expect(result.body).toContain('class="home-fab"');
+    expect(result.body).toContain('href="/"');
   });
 
   test("queries the ById GSI with the correct id", async () => {
@@ -100,7 +102,7 @@ describe("GET /", () => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
   });
 
-  test("returns home page with article cards", async () => {
+  test("returns home page with article cards, no home FAB", async () => {
     const handler = createHandler(makeMockDdb([SAMPLE_ITEM]));
     const result: APIGatewayProxyStructuredResultV2 = await handler(makeGatewayEvent());
     expect(result.statusCode).toBe(200);
@@ -109,6 +111,7 @@ describe("GET /", () => {
     expect(result.body).toContain('href="/abc12"');
     expect(result.body).toContain('style="background:#0d9488"');
     expect(result.body).toContain("How Load Balancers Work");
+    expect(result.body).not.toContain('class="home-fab"');
   });
 
   test("queries main table for user1, newest first, limit 30", async () => {

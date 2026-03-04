@@ -216,3 +216,24 @@ ol.layered {
   font-weight: 600;
   line-height: 1.3;
 }
+
+/* ── Back to home FAB ── */
+.home-fab {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  width: 3rem;
+  height: 3rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1.3rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.home-fab:hover { opacity: 0.8; }
