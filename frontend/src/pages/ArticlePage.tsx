@@ -20,7 +20,7 @@ export default function ArticlePage() {
   }, [articleId]);
 
   async function handleFeedback(picked: "like" | "dislike") {
-    if (picked === reaction || !articleId) return;
+    if (picked === reaction || !articleId || !article) return;
     const clientTimestamp = new Date().toISOString().replace(/:/g, "-");
     setReaction(picked);
     setFeedbackError(false);

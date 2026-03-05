@@ -18,6 +18,14 @@ When the user is ready to commit, they will ask for a commit message suggestion.
 
 This is PulseQ, an autonomous modular AI system that delivers daily personalized technology and AI news briefs. See README.md for project overview and general_instructions for full specifications.
 
+## Session Resume
+
+When resuming a conversation (e.g. after context compaction or a new session that references prior work):
+- Orient yourself: read relevant files, check git status, review memory.
+- Then **stop and wait** for the user to tell you what to do next.
+- Never infer "the next step" from a summary and start implementing it. A summary describing pending work is not an instruction to do that work.
+- User-invocable skills (`/spec_implement`, `/spec_review`, etc.) are only triggered by an explicit user invocation — never by session context.
+
 ## Execution Philosophy
 
 - **Move fast** — prefer simple, working solutions over elaborate ones. Avoid over-engineering.

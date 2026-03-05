@@ -4,7 +4,7 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==> Running Python tests"
-"$REPO_ROOT/.venv/bin/pytest" "$REPO_ROOT/writer/tests/" --cov=writer --cov-report=term-missing
+"$REPO_ROOT/.venv/bin/pytest" "$REPO_ROOT/writer/tests/" "$REPO_ROOT/scout/tests/" --cov=writer --cov=scout --cov-report=term-missing
 
 echo "==> Running backend tests"
 (cd "$REPO_ROOT/backend" && npm test)
