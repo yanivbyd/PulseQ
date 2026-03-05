@@ -117,6 +117,15 @@ class WriterStack(Stack):
 
         CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")
 
+        # ── S3: events (user feedback and future UI events) ──────────────────
+        events_bucket = s3.Bucket(
+            self,
+            "EventsBucket",
+            bucket_name="pulseq-events",
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+
         # ── Backend Lambda (Node.js — JSON API for articles) ─────────────────
         web_fn = nodejs.NodejsFunction(
             self,
@@ -135,7 +144,9 @@ class WriterStack(Stack):
         )
         articles_table.grant(web_fn, "dynamodb:Query")
         writer_fn.grant_invoke(web_fn)
+        events_bucket.grant_put(web_fn)
         web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
+        web_fn.add_environment("EVENTS_BUCKET", events_bucket.bucket_name)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
@@ -152,6 +163,11 @@ class WriterStack(Stack):
         )
         web_api.add_routes(
             path="/api/generate",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=web_integration,
+        )
+        web_api.add_routes(
+            path="/api/feedback",
             methods=[apigwv2.HttpMethod.POST],
             integration=web_integration,
         )
