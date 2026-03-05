@@ -14,7 +14,7 @@
     },
     {
       "title": "How Epoll Enables High-Performance Networking",
-      "description": "Why select/poll don’t scale and how epoll solves the problem"
+      "description": "Why select/poll don't scale and how epoll solves the problem"
     },
     {
       "title": "Write Amplification in Modern Databases",
@@ -31,6 +31,14 @@
     {
       "title": "G-Counters and PN-Counters: The Simplest CRDTs",
       "description": "How distributed counters merge without conflicts and why they work"
+    },
+    {
+      "title": "How Kafka Stores Messages",
+      "description": "Detailed analysis of Kafka's log-based storage and message retention policies."
+    },
+    {
+      "title": "The Internals of Kubernetes Scheduling",
+      "description": "Explaining the decision-making process and trade-offs in Kubernetes pod placement."
     }
   ]
 }

@@ -26,6 +26,16 @@ export async function triggerGenerate(): Promise<void> {
   if (!res.ok) throw new Error(`Failed to generate: ${res.status}`);
 }
 
+export async function triggerScout(): Promise<void> {
+  const userId = import.meta.env.VITE_USER_ID as string;
+  const res = await fetch("/api/scout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId }),
+  });
+  if (!res.ok) throw new Error(`Failed to refresh topics: ${res.status}`);
+}
+
 export async function postFeedback(
   articleId: string,
   articleTitle: string,

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, triggerGenerate, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, triggerGenerate, triggerScout, type ArticleSummary } from "../api";
 import styles from "./HomePage.module.css";
 
 type GenerateState = "idle" | "generating" | "cooldown";
+type ScoutState = "idle" | "refreshing" | "cooldown";
 
 export default function HomePage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
@@ -12,6 +13,9 @@ export default function HomePage() {
   const [generateState, setGenerateState] = useState<GenerateState>("idle");
   const [generateError, setGenerateError] = useState(false);
   const cooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [scoutState, setScoutState] = useState<ScoutState>("idle");
+  const [scoutError, setScoutError] = useState(false);
+  const scoutCooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // VITE_USER_ID is statically substituted by Vite at build time; this guard
@@ -30,7 +34,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    return () => { if (cooldownTimer.current) clearTimeout(cooldownTimer.current); };
+    return () => {
+      if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+      if (scoutCooldownTimer.current) clearTimeout(scoutCooldownTimer.current);
+    };
   }, []);
 
   async function handleGenerate() {
@@ -43,6 +50,18 @@ export default function HomePage() {
     }
     setGenerateState("cooldown");
     cooldownTimer.current = setTimeout(() => setGenerateState("idle"), 60_000);
+  }
+
+  async function handleScout() {
+    setScoutState("refreshing");
+    setScoutError(false);
+    try {
+      await triggerScout();
+    } catch {
+      setScoutError(true);
+    }
+    setScoutState("cooldown");
+    scoutCooldownTimer.current = setTimeout(() => setScoutState("idle"), 60_000);
   }
 
   if (loading) return <div className={styles.status}>Loading...</div>;
@@ -80,6 +99,21 @@ export default function HomePage() {
             {generateError
               ? "Something went wrong. Try again in a minute."
               : "Generating… you'll get a notification when it's ready."}
+          </p>
+        )}
+        <button
+          className={styles.generateBtn}
+          style={{ marginTop: "0.75rem" }}
+          disabled={scoutState !== "idle"}
+          onClick={handleScout}
+        >
+          {scoutState === "refreshing" ? "Refreshing…" : "Refresh Topics"}
+        </button>
+        {scoutState !== "idle" && (
+          <p className={styles.generateMsg}>
+            {scoutError
+              ? "Something went wrong. Try again in a minute."
+              : "Topics are being refreshed."}
           </p>
         )}
       </div>

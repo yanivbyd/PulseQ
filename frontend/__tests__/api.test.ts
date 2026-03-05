@@ -1,4 +1,4 @@
-import { fetchArticleSummaries, fetchArticle, triggerGenerate, postFeedback } from "../src/api";
+import { fetchArticleSummaries, fetchArticle, triggerGenerate, triggerScout, postFeedback } from "../src/api";
 
 const SUMMARIES = [
   { id: "abc12", title: "How Load Balancers Work", accent: "#0d9488", creation_timestamp: "2026-03-01T00:00:00.000Z" },
@@ -54,6 +54,23 @@ describe("triggerGenerate", () => {
   test("throws on 5xx", async () => {
     mockFetch(false, undefined, 500);
     await expect(triggerGenerate()).rejects.toThrow("500");
+  });
+});
+
+describe("triggerScout", () => {
+  test("sends POST /api/scout with userId and resolves on 202", async () => {
+    mockFetch(true, { status: "scouting" }, 202);
+    await expect(triggerScout()).resolves.toBeUndefined();
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("/api/scout");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toMatchObject({ userId: expect.any(String) });
+  });
+
+  test("throws on 5xx", async () => {
+    mockFetch(false, undefined, 500);
+    await expect(triggerScout()).rejects.toThrow("500");
   });
 });
 
