@@ -49,7 +49,7 @@ describe("ArticlePage feedback bar", () => {
     renderArticlePage();
     await screen.findByLabelText("Like");
     await userEvent.click(screen.getByLabelText("Like"));
-    expect(api.postFeedback).toHaveBeenCalledWith("abc12", "like", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/));
+    expect(api.postFeedback).toHaveBeenCalledWith("abc12", "Test Article", "like", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/));
     expect(isSelected(screen.getByLabelText("Like"))).toBe(true);
     expect(isSelected(screen.getByLabelText("Dislike"))).toBe(false);
   });
@@ -58,7 +58,7 @@ describe("ArticlePage feedback bar", () => {
     renderArticlePage();
     await screen.findByLabelText("Dislike");
     await userEvent.click(screen.getByLabelText("Dislike"));
-    expect(api.postFeedback).toHaveBeenCalledWith("abc12", "dislike", expect.any(String));
+    expect(api.postFeedback).toHaveBeenCalledWith("abc12", "Test Article", "dislike", expect.any(String));
     expect(isSelected(screen.getByLabelText("Dislike"))).toBe(true);
   });
 

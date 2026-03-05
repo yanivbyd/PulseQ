@@ -89,7 +89,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
         return jsonResponse(400, { error: "Invalid JSON body" });
       }
 
-      const { articleId, userId, reaction, clientTimestamp } = parsed as Record<string, unknown>;
+      const { articleId, userId, reaction, clientTimestamp, articleTitle } = parsed as Record<string, unknown>;
       if (!articleId || typeof articleId !== "string") {
         console.warn(`feedback: invalid articleId: ${JSON.stringify(articleId)}`);
         return jsonResponse(400, { error: "articleId is required" });
@@ -97,6 +97,10 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       if (!userId || typeof userId !== "string") {
         console.warn(`feedback: invalid userId: ${JSON.stringify(userId)}`);
         return jsonResponse(400, { error: "userId is required" });
+      }
+      if (!articleTitle || typeof articleTitle !== "string") {
+        console.warn(`feedback: invalid articleTitle: ${JSON.stringify(articleTitle)}`);
+        return jsonResponse(400, { error: "articleTitle is required" });
       }
       if (reaction !== "like" && reaction !== "dislike") {
         console.warn(`feedback: invalid reaction: ${JSON.stringify(reaction)}`);
@@ -129,7 +133,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
         await s3Client.send(new PutObjectCommand({
           Bucket: bucket,
           Key: key,
-          Body: JSON.stringify({ articleId, userId, reaction, clientTimestamp }),
+          Body: JSON.stringify({ articleId, articleTitle, userId, reaction, clientTimestamp }),
           ContentType: "application/json",
         }));
         return jsonResponse(200, {});

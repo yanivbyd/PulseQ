@@ -28,6 +28,7 @@ export async function triggerGenerate(): Promise<void> {
 
 export async function postFeedback(
   articleId: string,
+  articleTitle: string,
   reaction: "like" | "dislike",
   clientTimestamp: string,
 ): Promise<void> {
@@ -35,7 +36,7 @@ export async function postFeedback(
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ articleId, userId, reaction, clientTimestamp }),
+    body: JSON.stringify({ articleId, articleTitle, userId, reaction, clientTimestamp }),
   });
   if (!res.ok) throw new Error(`Failed to post feedback: ${res.status}`);
 }

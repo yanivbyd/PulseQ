@@ -25,7 +25,7 @@ export default function ArticlePage() {
     setReaction(picked);
     setFeedbackError(false);
     try {
-      await postFeedback(articleId, picked, clientTimestamp);
+      await postFeedback(articleId, article.title, picked, clientTimestamp);
     } catch {
       setReaction(null);
       setFeedbackError(true);

@@ -260,6 +260,7 @@ describe("POST /api/feedback", () => {
   function validBody(overrides: Record<string, unknown> = {}) {
     return JSON.stringify({
       articleId: "abc12",
+      articleTitle: "How Load Balancers Work",
       userId: "user1",
       reaction: "like",
       clientTimestamp: validTimestamp(),
@@ -279,14 +280,14 @@ describe("POST /api/feedback", () => {
     const s3 = makeMockS3();
     const ts = validTimestamp();
     const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
-      makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({ articleId: "abc12", userId: "user1", reaction: "like", clientTimestamp: ts })),
+      makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", reaction: "like", clientTimestamp: ts })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     const cmd = (s3.send as jest.Mock).mock.calls[0][0] as PutObjectCommand;
     expect(cmd.input.Bucket).toBe(BUCKET);
     expect(cmd.input.Key).toBe(`user1/${ts}_article_abc12_general_feedback.json`);
     expect(cmd.input.ContentType).toBe("application/json");
-    expect(JSON.parse(cmd.input.Body as string)).toMatchObject({ articleId: "abc12", userId: "user1", reaction: "like", clientTimestamp: ts });
+    expect(JSON.parse(cmd.input.Body as string)).toMatchObject({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", reaction: "like", clientTimestamp: ts });
   });
 
   test("accepts dislike reaction", async () => {

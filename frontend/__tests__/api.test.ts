@@ -60,17 +60,17 @@ describe("triggerGenerate", () => {
 describe("postFeedback", () => {
   test("sends POST /api/feedback with correct body and resolves on 200", async () => {
     mockFetch(true, {}, 200);
-    await expect(postFeedback("abc12", "like", "2026-03-05T08-00-00.000Z")).resolves.toBeUndefined();
+    await expect(postFeedback("abc12", "How Load Balancers Work", "like", "2026-03-05T08-00-00.000Z")).resolves.toBeUndefined();
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("/api/feedback");
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({ "Content-Type": "application/json" });
     const body = JSON.parse(init.body);
-    expect(body).toMatchObject({ articleId: "abc12", reaction: "like", clientTimestamp: "2026-03-05T08-00-00.000Z" });
+    expect(body).toMatchObject({ articleId: "abc12", articleTitle: "How Load Balancers Work", reaction: "like", clientTimestamp: "2026-03-05T08-00-00.000Z" });
   });
 
   test("throws on HTTP error", async () => {
     mockFetch(false, undefined, 400);
-    await expect(postFeedback("abc12", "dislike", "2026-03-05T08-00-00.000Z")).rejects.toThrow("400");
+    await expect(postFeedback("abc12", "How Load Balancers Work", "dislike", "2026-03-05T08-00-00.000Z")).rejects.toThrow("400");
   });
 });
