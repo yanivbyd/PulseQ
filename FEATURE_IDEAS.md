@@ -1,0 +1,7 @@
+- Refactor anything that is per user to have a user field (in DDB) or the user folder in S3
+- Extend feedback to allow free text feedback
+- Extend feedback to 5 more questions with score 1-5
+- Start with a collapsable quiz section on the article content with 3 questions, each question with 4 possible answers. when clicking on an answer indicate if it's correct or not.
+- Separate Further Reading to a different AI call - and verify the links. Most of them do not work.
+- User tastes, allow editing it (via AI)
+- Frontend page for next topics (+ hamburger for home page and next topics page)
