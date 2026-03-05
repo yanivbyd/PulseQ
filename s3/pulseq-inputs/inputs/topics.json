@@ -17,16 +17,20 @@
       "description": "Why select/poll don’t scale and how epoll solves the problem"
     },
     {
-      "title": "RCU (Read-Copy-Update) Explained",
-      "description": "One of the most elegant concurrency mechanisms used heavily in the Linux kernel."
+      "title": "Write Amplification in Modern Databases",
+      "description": "Why storage engines like LSM trees cause extra writes and how compaction works"
     },
     {
-      "title": "Per-CPU Data Structures",
-      "description": "How the kernel avoids contention by sharding state per CPU."
+      "title": "How Uber Matches Riders and Drivers in Real Time",
+      "description": "Explain the core matching loop: location updates, candidate driver selection, dispatch algorithms, and latency constraints"
     },
     {
-      "title": "How the Linux Kernel Handles Interrupts",
-      "description": "How the Linux kernel handles interrupts, including hardware interrupts and software interrupts."
+      "title": "CRDTs (Conflict-Free Replicated Data Types) Explained",
+      "description": "How distributed systems achieve eventual consistency without coordination."
+    },
+    {
+      "title": "G-Counters and PN-Counters: The Simplest CRDTs",
+      "description": "How distributed counters merge without conflicts and why they work"
     }
   ]
 }

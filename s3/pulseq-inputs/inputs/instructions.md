@@ -52,7 +52,8 @@ The stylesheet constraints stay fixed. Everything else can breathe.
 
 ## Content
 
-- **Length:** ~800–1,000 words of body text. Enough to be substantive, short enough to read in one sitting on mobile.
+- **Length:** ~800–1,000 words of body text. Enough to be substantive, short enough to read in one sitting on mobile. **Do not cut depth to stay within the word limit** — if the topic warrants more, write more. A thorough article that exceeds 1,000 words is better than a shallow one that hits the target.
+- **Depth:** Go deep on the subject. Explain underlying mechanisms, not just surface behavior. Where relevant, include a concrete worked example (e.g. a step-by-step scenario or a before/after design comparison) even if it pushes the article past the word limit. Keep examples at the design and conceptual level — no code snippets.
 - **Focus:** Technical. Explain how things work, not just what they are. Favor concrete mechanisms, trade-offs, and real-world implications over marketing language.
 - **Accuracy:** Only use information from the provided topic. Do not invent facts, statistics, quotes, or examples that are not in the source material. If the topic is thin, write less — do not pad with speculation.
 - **Tone:** Clear and direct. Written for a technically literate reader (engineer, architect, technical PM). Skip introductory fluff.
