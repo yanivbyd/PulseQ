@@ -33,3 +33,60 @@
   text-align: center;
   color: var(--muted);
 }
+
+.divider {
+  max-width: 680px;
+  margin: 1.5rem auto 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.feedback {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.feedbackLabel {
+  margin: 0 0 0.75rem;
+  font-family: "Nunito", sans-serif;
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+
+.feedbackButtons {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.feedbackBtn {
+  font-size: 1.75rem;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0.4rem 0.5rem;
+  line-height: 1;
+  opacity: 0.35;
+  transition: opacity 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.feedbackBtn:hover {
+  opacity: 0.75;
+  transform: scale(1.2);
+}
+
+.feedbackBtn.selected {
+  opacity: 1;
+  border-color: var(--border);
+  transform: scale(1.25);
+}
+
+.feedbackErr {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
