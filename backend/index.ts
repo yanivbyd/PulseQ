@@ -38,6 +38,38 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       }
     }
 
+    if (path === "/api/scout" && method === "POST") {
+      const scoutArn = process.env.SCOUT_FUNCTION_ARN;
+      if (!scoutArn) {
+        console.error("scout: SCOUT_FUNCTION_ARN environment variable is not set");
+        return jsonResponse(500, { error: "SCOUT_FUNCTION_ARN is not configured" });
+      }
+
+      let parsed: unknown;
+      try { parsed = JSON.parse(event.body ?? "{}"); } catch {
+        console.warn("scout: invalid JSON body");
+        return jsonResponse(400, { error: "Invalid JSON body" });
+      }
+
+      const { userId } = parsed as Record<string, unknown>;
+      if (!userId || typeof userId !== "string") {
+        console.warn(`scout: missing or invalid userId: ${JSON.stringify(userId)}`);
+        return jsonResponse(400, { error: "userId is required" });
+      }
+
+      try {
+        await lambdaClient.send(new InvokeCommand({
+          FunctionName: scoutArn,
+          InvocationType: "Event",
+          Payload: JSON.stringify({ userId }),
+        }));
+        return jsonResponse(202, { status: "scouting" });
+      } catch (err) {
+        console.error("scout: Lambda invoke failed:", err);
+        return jsonResponse(500, { error: "Failed to invoke scout" });
+      }
+    }
+
     if (path === "/api/article-summaries") {
       const userId = event.queryStringParameters?.userId;
       if (!userId) return jsonResponse(400, { error: "userId query parameter is required" });

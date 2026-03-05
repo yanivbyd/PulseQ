@@ -1,4 +1,5 @@
 import json
+import os
 
 from aws_cdk import (
     BundlingOptions,
@@ -126,6 +127,36 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
+        # ── Scout Lambda ─────────────────────────────────────────────────────
+        scout_fn = _lambda.Function(
+            self,
+            "ScoutFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
+            handler="lambda_handler.handler",
+            code=_lambda.Code.from_asset(
+                "../scout",
+                bundling=BundlingOptions(
+                    image=_lambda.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+                    ],
+                ),
+            ),
+            timeout=Duration.minutes(15),
+            environment={
+                "INPUT_BUCKET": input_bucket.bucket_name,
+                "EVENTS_BUCKET": events_bucket.bucket_name,
+                "SECRET_NAME": secret.secret_name,
+            },
+        )
+
+        input_bucket.grant_read_write(scout_fn)
+        events_bucket.grant_read(scout_fn)
+        secret.grant_read(scout_fn)
+
         # ── Backend Lambda (Node.js — JSON API for articles) ─────────────────
         web_fn = nodejs.NodejsFunction(
             self,
@@ -144,8 +175,10 @@ class WriterStack(Stack):
         )
         articles_table.grant(web_fn, "dynamodb:Query")
         writer_fn.grant_invoke(web_fn)
+        scout_fn.grant_invoke(web_fn)
         events_bucket.grant_put(web_fn)
         web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
+        web_fn.add_environment("SCOUT_FUNCTION_ARN", scout_fn.function_arn)
         web_fn.add_environment("EVENTS_BUCKET", events_bucket.bucket_name)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
@@ -168,6 +201,11 @@ class WriterStack(Stack):
         )
         web_api.add_routes(
             path="/api/feedback",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=web_integration,
+        )
+        web_api.add_routes(
+            path="/api/scout",
             methods=[apigwv2.HttpMethod.POST],
             integration=web_integration,
         )
@@ -213,6 +251,41 @@ class WriterStack(Stack):
 
         CfnOutput(self, "FrontendUrl", value=f"https://{frontend_distribution.domain_name}")
         CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)
+
+        # ── Daily scheduler: invoke Scout Lambda at 07:30 Asia/Jerusalem ─────
+        scout_user_id = os.environ.get("SCOUT_USER_ID", "user1")
+
+        scout_scheduler_role = iam.Role(
+            self,
+            "ScoutSchedulerRole",
+            assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
+            inline_policies={
+                "InvokeScout": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            actions=["lambda:InvokeFunction"],
+                            resources=[scout_fn.function_arn],
+                        )
+                    ]
+                )
+            },
+        )
+
+        scheduler.CfnSchedule(
+            self,
+            "DailyScoutSchedule",
+            schedule_expression="cron(30 7 * * ? *)",
+            schedule_expression_timezone="Asia/Jerusalem",
+            flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(
+                mode="FLEXIBLE",
+                maximum_window_in_minutes=10,
+            ),
+            target=scheduler.CfnSchedule.TargetProperty(
+                arn=scout_fn.function_arn,
+                role_arn=scout_scheduler_role.role_arn,
+                input=json.dumps({"userId": scout_user_id}),
+            ),
+        )
 
         # ── Daily scheduler: invoke Writer Lambda at 08:00 Asia/Jerusalem ────
         scheduler_role = iam.Role(

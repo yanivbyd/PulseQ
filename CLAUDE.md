@@ -37,7 +37,6 @@ When resuming a conversation (e.g. after context compaction or a new session tha
 ## Development Guidelines
 
 **Testing Requirements:**
-- Development follows **TDD**: write the failing tests first, get user approval, then implement
 - Every code change MUST include corresponding unit tests
 - Tests should cover new functionality, edge cases, and error conditions
 - Code without tests is incomplete
@@ -48,6 +47,13 @@ When resuming a conversation (e.g. after context compaction or a new session tha
   - TypeScript: `jest --coverage` or `vitest run --coverage`
 - All new code must be covered. Uncovered lines must be either tested or explicitly justified
 - Prefer fewer, broader tests over many narrow ones. If a single test can assert multiple related behaviours without obscuring intent, merge them. Only use separate tests when the failure modes are meaningfully distinct and a combined test would hide which behaviour broke.
+- Tests must be written alongside the code, not before it. Do not ask for approval before implementing.
+
+## Lambda Error Logging
+
+- Every Lambda (Python or TypeScript) MUST log an error for every 4xx and 5xx response it returns.
+- When a dependency failure is handled with fail-open behavior (e.g. continuing with a default value instead of raising), log a warning so the degraded state is visible.
+- Unit tests MUST assert that the logger was called for each error path and each fail-open scenario (spy on `console.error`/`console.warn` in TS, `logger.error`/`logger.warning` in Python).
 
 ## Spec Compliance
 

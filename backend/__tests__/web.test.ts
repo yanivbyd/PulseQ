@@ -249,6 +249,63 @@ describe("POST /api/generate", () => {
   });
 });
 
+describe("POST /api/scout", () => {
+  beforeEach(() => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.SCOUT_FUNCTION_ARN = "arn:aws:lambda:eu-west-1:123456789:function:ScoutFunction";
+  });
+  afterEach(() => { delete process.env.SCOUT_FUNCTION_ARN; });
+
+  test("invokes scout Lambda with userId payload and returns 202", async () => {
+    const lambda = makeMockLambda();
+    const result = await createHandler(makeMockDdb({}), lambda, mockS3)(
+      makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(202);
+    expect(JSON.parse(result.body as string)).toEqual({ status: "scouting" });
+    const cmd = (lambda.send as jest.Mock).mock.calls[0][0] as InvokeCommand;
+    expect(cmd.input.FunctionName).toBe(process.env.SCOUT_FUNCTION_ARN);
+    expect(cmd.input.InvocationType).toBe("Event");
+    const payloadStr = typeof cmd.input.Payload === "string"
+      ? cmd.input.Payload
+      : Buffer.from(cmd.input.Payload as Uint8Array).toString();
+    expect(JSON.parse(payloadStr)).toEqual({ userId: "user1" });
+  });
+
+  test("returns 400 when userId is missing", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+      makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({})),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/userId/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("userId"));
+    warnSpy.mockRestore();
+  });
+
+  test("returns 500 when SCOUT_FUNCTION_ARN is missing", async () => {
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    delete process.env.SCOUT_FUNCTION_ARN;
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+      makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(500);
+    expect(JSON.parse(result.body as string).error).toMatch(/SCOUT_FUNCTION_ARN/);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("SCOUT_FUNCTION_ARN"));
+    errorSpy.mockRestore();
+  });
+
+  test("returns 500 when Lambda invoke fails", async () => {
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), makeMockLambda(true), mockS3)(
+      makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(500);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Lambda invoke failed"), expect.any(Error));
+    errorSpy.mockRestore();
+  });
+});
+
 describe("POST /api/feedback", () => {
   const BUCKET = "pulseq-events";
 
