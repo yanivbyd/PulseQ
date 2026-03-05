@@ -4,7 +4,7 @@ import openai
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from writer.writer import generate_short_id, run
+from writer.writer import generate_short_id, run, strip_markdown_fences
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -30,6 +30,37 @@ def mock_openai():
         choices=[MagicMock(message=MagicMock(content=fragment))]
     )
     return mock_client, fragment
+
+
+# ── strip_markdown_fences ───────────────────────────────────────────────────
+
+def test_strip_fences_no_fence():
+    assert strip_markdown_fences("<p>hello</p>") == "<p>hello</p>"
+
+def test_strip_fences_html_lang():
+    assert strip_markdown_fences("```html\n<p>hi</p>\n```") == "<p>hi</p>"
+
+def test_strip_fences_no_newline_after_lang():
+    assert strip_markdown_fences("```html<p>hi</p>\n```") == "<p>hi</p>"
+
+def test_strip_fences_no_newlines():
+    assert strip_markdown_fences("```html<p>hi</p>```") == "<p>hi</p>"
+
+def test_strip_fences_no_lang():
+    assert strip_markdown_fences("```\n<p>hi</p>\n```") == "```\n<p>hi</p>\n```"
+
+def test_strip_fences_trailing_whitespace():
+    assert strip_markdown_fences("```html\n<p>hi</p>\n```  ") == "<p>hi</p>"
+
+def test_strip_fences_inner_blank_lines():
+    assert strip_markdown_fences("```html\n\n<p>hi</p>\n\n```") == "<p>hi</p>"
+
+def test_strip_fences_logs_info(caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="writer.writer"):
+        strip_markdown_fences("```html\n<p>hi</p>\n```")
+    assert caplog.records[-1].levelno == logging.INFO
+    assert caplog.records[-1].message == "stripped markdown fence: ```html{content}```"  # fixed string, no interpolation
 
 
 # ── Tests ───────────────────────────────────────────────────────────────────
