@@ -21,3 +21,6 @@ cdk.out/
 # Node.js
 node_modules/
 frontend/dist/
+
+# S3 local data
+s3/pulseq-events/
