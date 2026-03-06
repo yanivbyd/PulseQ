@@ -1,21 +1,20 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, triggerGenerate, triggerScout, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, triggerGenerate, triggerScout, postMarkRead, type ArticleSummary } from "../api";
 import styles from "./HomePage.module.css";
 
-type GenerateState = "idle" | "generating" | "cooldown";
-type ScoutState = "idle" | "refreshing" | "cooldown";
+type ActionState = "idle" | "active" | "cooldown";
 
 export default function HomePage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generateState, setGenerateState] = useState<GenerateState>("idle");
-  const [generateError, setGenerateError] = useState(false);
-  const cooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [scoutState, setScoutState] = useState<ScoutState>("idle");
-  const [scoutError, setScoutError] = useState(false);
-  const scoutCooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [generateState, setGenerateState] = useState<ActionState>("idle");
+  const [scoutState, setScoutState] = useState<ActionState>("idle");
+  const [toast, setToast] = useState<string | null>(null);
+  const generateCooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scoutCooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // VITE_USER_ID is statically substituted by Vite at build time; this guard
@@ -35,33 +34,56 @@ export default function HomePage() {
 
   useEffect(() => {
     return () => {
-      if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
-      if (scoutCooldownTimer.current) clearTimeout(scoutCooldownTimer.current);
+      if (generateCooldown.current) clearTimeout(generateCooldown.current);
+      if (scoutCooldown.current) clearTimeout(scoutCooldown.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4_000);
+  }
+
   async function handleGenerate() {
-    setGenerateState("generating");
-    setGenerateError(false);
+    if (generateState !== "idle") return;
+    setGenerateState("active");
     try {
       await triggerGenerate();
+      showToast("Generating… you'll get a notification when it's ready.");
     } catch {
-      setGenerateError(true);
+      showToast("Something went wrong. Try again in a minute.");
     }
     setGenerateState("cooldown");
-    cooldownTimer.current = setTimeout(() => setGenerateState("idle"), 60_000);
+    generateCooldown.current = setTimeout(() => setGenerateState("idle"), 60_000);
   }
 
   async function handleScout() {
-    setScoutState("refreshing");
-    setScoutError(false);
+    if (scoutState !== "idle") return;
+    setScoutState("active");
     try {
       await triggerScout();
+      showToast("Topics are being refreshed.");
     } catch {
-      setScoutError(true);
+      showToast("Something went wrong. Try again in a minute.");
     }
     setScoutState("cooldown");
-    scoutCooldownTimer.current = setTimeout(() => setScoutState("idle"), 60_000);
+    scoutCooldown.current = setTimeout(() => setScoutState("idle"), 60_000);
+  }
+
+  async function handleMarkRead(article: ArticleSummary) {
+    setArticles((prev) => prev.filter((a) => a.id !== article.id));
+    const userId = import.meta.env.VITE_USER_ID as string;
+    const idempotencyKey = crypto.randomUUID();
+    try {
+      await postMarkRead(userId, article.id, true, idempotencyKey);
+    } catch {
+      setArticles((prev) =>
+        [...prev, article].sort((a, b) => b.creation_timestamp.localeCompare(a.creation_timestamp))
+      );
+      showToast("Failed to mark as read. Please try again.");
+    }
   }
 
   if (loading) return <div className={styles.status}>Loading...</div>;
@@ -69,53 +91,36 @@ export default function HomePage() {
 
   return (
     <main className={styles.container}>
-      <h1 className={styles.header}>PulseQ</h1>
-      <div className={styles.list}>
+      <ul className={styles.list}>
         {articles.length === 0
-          ? <p className={styles.empty}>No articles yet.</p>
+          ? <li className={styles.empty}>Nothing new to read.</li>
           : articles.map((a) => (
-              <Link
-                key={a.id}
-                to={`/${a.id}`}
-                className={styles.card}
-                style={{ background: a.accent }}
-              >
-                <span className={styles.title}>{a.title}</span>
-              </Link>
+              <li key={a.id} className={styles.row}>
+                <span className={styles.dot} aria-hidden="true" />
+                <Link to={`/${a.id}`} className={styles.title}>{a.title}</Link>
+                <button
+                  className={styles.markReadBtn}
+                  aria-label="Mark as read"
+                  onClick={() => handleMarkRead(a)}
+                >✓</button>
+              </li>
             ))
         }
-      </div>
-      <hr className={styles.divider} />
-      <div className={styles.generateSection}>
+      </ul>
+      {toast && <div className={styles.toast}>{toast}</div>}
+      <div className={styles.bottomBar}>
         <button
-          className={styles.generateBtn}
+          className={styles.barBtn}
+          aria-label="Generate"
           disabled={generateState !== "idle"}
           onClick={handleGenerate}
-        >
-          {generateState === "generating" ? "Generating…" : "Generate New Article"}
-        </button>
-        {generateState !== "idle" && (
-          <p className={styles.generateMsg}>
-            {generateError
-              ? "Something went wrong. Try again in a minute."
-              : "Generating… you'll get a notification when it's ready."}
-          </p>
-        )}
+        >✏️</button>
         <button
-          className={styles.generateBtn}
-          style={{ marginTop: "0.75rem" }}
+          className={styles.barBtn}
+          aria-label="Scout"
           disabled={scoutState !== "idle"}
           onClick={handleScout}
-        >
-          {scoutState === "refreshing" ? "Refreshing…" : "Refresh Topics"}
-        </button>
-        {scoutState !== "idle" && (
-          <p className={styles.generateMsg}>
-            {scoutError
-              ? "Something went wrong. Try again in a minute."
-              : "Topics are being refreshed."}
-          </p>
-        )}
+        >📰</button>
       </div>
     </main>
   );

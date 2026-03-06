@@ -3,6 +3,7 @@ export interface ArticleSummary {
   title: string;
   accent: string;
   creation_timestamp: string;
+  is_read?: boolean;
 }
 
 export interface Article extends ArticleSummary {
@@ -34,6 +35,20 @@ export async function triggerScout(): Promise<void> {
     body: JSON.stringify({ userId }),
   });
   if (!res.ok) throw new Error(`Failed to refresh topics: ${res.status}`);
+}
+
+export async function postMarkRead(
+  userId: string,
+  articleId: string,
+  isRead: boolean,
+  idempotencyKey: string,
+): Promise<void> {
+  const res = await fetch("/api/mark-read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, articleId, is_read: isRead, idempotencyKey }),
+  });
+  if (!res.ok) throw new Error(`Failed to mark read: ${res.status}`);
 }
 
 export async function postFeedback(

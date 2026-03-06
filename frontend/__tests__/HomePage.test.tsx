@@ -18,7 +18,7 @@ test("shows loading state initially", () => {
   expect(screen.getByText("Loading...")).toBeInTheDocument();
 });
 
-test("renders article cards on success", async () => {
+test("renders article rows on success", async () => {
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
   renderPage();
   await waitFor(() => expect(screen.getByText("How Load Balancers Work")).toBeInTheDocument());
@@ -29,7 +29,7 @@ test("renders article cards on success", async () => {
 test("renders empty state when no articles", async () => {
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue([]);
   renderPage();
-  await waitFor(() => expect(screen.getByText("No articles yet.")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("Nothing new to read.")).toBeInTheDocument());
 });
 
 test("renders error message on fetch failure", async () => {
@@ -38,33 +38,33 @@ test("renders error message on fetch failure", async () => {
   await waitFor(() => expect(screen.getByText("Network error")).toBeInTheDocument());
 });
 
-describe("Generate Article button", () => {
+describe("Generate button", () => {
   beforeEach(() => {
     vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
   });
 
   test("button is in idle state on load", async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Generate New Article" })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Generate New Article" })).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Generate" })).not.toBeDisabled();
   });
 
-  test("clicking button disables it and shows notification message on success", async () => {
+  test("clicking button disables it and shows notification toast on success", async () => {
     vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Generate New Article" }));
-    await userEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    await waitFor(() => screen.getByRole("button", { name: "Generate" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(screen.getByText(/you'll get a notification/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Generate New Article" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
   });
 
-  test("shows error message and keeps button disabled on failure", async () => {
+  test("shows error toast and keeps button disabled on failure", async () => {
     vi.mocked(api.triggerGenerate).mockRejectedValue(new Error("Server error"));
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Generate New Article" }));
-    await userEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    await waitFor(() => screen.getByRole("button", { name: "Generate" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
     await waitFor(() => expect(screen.getByText(/Something went wrong/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Generate New Article" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
   });
 
   test("button re-enables after 60 seconds", async () => {
@@ -72,42 +72,42 @@ describe("Generate Article button", () => {
     vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
     renderPage();
     await act(async () => {}); // flush fetchArticleSummaries + React state
-    fireEvent.click(screen.getByRole("button", { name: "Generate New Article" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     await act(async () => {}); // flush triggerGenerate promise + state updates
-    expect(screen.getByRole("button", { name: "Generate New Article" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
     act(() => { vi.advanceTimersByTime(60_000); });
-    expect(screen.getByRole("button", { name: "Generate New Article" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Generate" })).not.toBeDisabled();
     vi.useRealTimers();
   });
 });
 
-describe("Refresh Topics button", () => {
+describe("Scout button", () => {
   beforeEach(() => {
     vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
   });
 
   test("button is in idle state on load", async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh Topics" })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Refresh Topics" })).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Scout" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Scout" })).not.toBeDisabled();
   });
 
   test("clicking button disables it and shows message on success", async () => {
     vi.mocked(api.triggerScout).mockResolvedValue(undefined);
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Refresh Topics" }));
-    await userEvent.click(screen.getByRole("button", { name: "Refresh Topics" }));
+    await waitFor(() => screen.getByRole("button", { name: "Scout" }));
+    await userEvent.click(screen.getByRole("button", { name: "Scout" }));
     await waitFor(() => expect(screen.getByText("Topics are being refreshed.")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Refresh Topics" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
   });
 
-  test("shows error message and keeps button disabled on failure", async () => {
+  test("shows error toast and keeps button disabled on failure", async () => {
     vi.mocked(api.triggerScout).mockRejectedValue(new Error("Server error"));
     renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Refresh Topics" }));
-    await userEvent.click(screen.getByRole("button", { name: "Refresh Topics" }));
+    await waitFor(() => screen.getByRole("button", { name: "Scout" }));
+    await userEvent.click(screen.getByRole("button", { name: "Scout" }));
     await waitFor(() => expect(screen.getByText(/Something went wrong/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Refresh Topics" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
   });
 
   test("button re-enables after 60 seconds", async () => {
@@ -115,11 +115,11 @@ describe("Refresh Topics button", () => {
     vi.mocked(api.triggerScout).mockResolvedValue(undefined);
     renderPage();
     await act(async () => {}); // flush fetchArticleSummaries + React state
-    fireEvent.click(screen.getByRole("button", { name: "Refresh Topics" }));
+    fireEvent.click(screen.getByRole("button", { name: "Scout" }));
     await act(async () => {}); // flush triggerScout promise + state updates
-    expect(screen.getByRole("button", { name: "Refresh Topics" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
     act(() => { vi.advanceTimersByTime(60_000); });
-    expect(screen.getByRole("button", { name: "Refresh Topics" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scout" })).not.toBeDisabled();
     vi.useRealTimers();
   });
 });

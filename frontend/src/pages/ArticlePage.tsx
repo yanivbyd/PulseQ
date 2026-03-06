@@ -38,7 +38,9 @@ export default function ArticlePage() {
 
   return (
     <>
-      <a href="/" className={styles.fab} aria-label="Home">🏡</a>
+      <div className={styles.bottomBar}>
+        <a href="/" className={styles.barBtn} aria-label="Home">🏠</a>
+      </div>
       <div
         className={styles.wrapper}
         dangerouslySetInnerHTML={{ __html: article.html }}

@@ -38,6 +38,14 @@ function isSelected(el: HTMLElement) {
   return el.className.includes("selected");
 }
 
+describe("ArticlePage bottom bar", () => {
+  test("renders a home link in the bottom bar", async () => {
+    renderArticlePage();
+    const homeLink = await screen.findByRole("link", { name: "Home" });
+    expect(homeLink).toHaveAttribute("href", "/");
+  });
+});
+
 describe("ArticlePage feedback bar", () => {
   test("renders thumbs up and down buttons after article loads", async () => {
     renderArticlePage();

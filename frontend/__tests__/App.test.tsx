@@ -8,5 +8,5 @@ vi.mock("../src/api");
 test("renders home page at /", async () => {
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue([]);
   render(<App />);
-  expect(await screen.findByText("No articles yet.")).toBeInTheDocument();
+  expect(await screen.findByText("Nothing new to read.")).toBeInTheDocument();
 });

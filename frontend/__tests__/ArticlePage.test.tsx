@@ -28,7 +28,7 @@ test("shows loading state initially", () => {
   expect(screen.getByText("Loading...")).toBeInTheDocument();
 });
 
-test("renders article HTML and home FAB, sets page title", async () => {
+test("renders article HTML and home link in bottom bar, sets page title", async () => {
   vi.mocked(api.fetchArticle).mockResolvedValue(ARTICLE);
   renderPage();
   await waitFor(() => expect(screen.getByText("How Load Balancers Work")).toBeInTheDocument());
