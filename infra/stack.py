@@ -173,7 +173,7 @@ class WriterStack(Stack):
                 external_modules=["@aws-sdk/*"],
             ),
         )
-        articles_table.grant(web_fn, "dynamodb:Query")
+        articles_table.grant(web_fn, "dynamodb:Query", "dynamodb:UpdateItem")
         writer_fn.grant_invoke(web_fn)
         scout_fn.grant_invoke(web_fn)
         events_bucket.grant_put(web_fn)

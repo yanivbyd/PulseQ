@@ -49,6 +49,11 @@ When resuming a conversation (e.g. after context compaction or a new session tha
 - Prefer fewer, broader tests over many narrow ones. If a single test can assert multiple related behaviours without obscuring intent, merge them. Only use separate tests when the failure modes are meaningfully distinct and a combined test would hide which behaviour broke.
 - Tests must be written alongside the code, not before it. Do not ask for approval before implementing.
 
+**Test Assertion Quality:**
+- **Each assertion should falsify exactly one thing.** Before writing an assertion, ask: what specific incorrect behaviour would this catch that no other assertion in this test already catches? If the answer is "nothing new", remove it.
+- **Use named option objects instead of positional booleans in test helpers.** A boolean argument is opaque at the call site; a named property is self-documenting.
+- **Assert on outcomes over implementation details.** If the observable result (return value, side effect, log message) fully proves the behaviour, prefer that over inspecting internal state. Only inspect internals when the result alone cannot distinguish correct from incorrect behaviour.
+
 ## Lambda Error Logging
 
 - Every Lambda (Python or TypeScript) MUST log an error for every 4xx and 5xx response it returns.
