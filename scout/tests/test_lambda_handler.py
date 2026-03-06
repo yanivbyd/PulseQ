@@ -40,11 +40,11 @@ def _make_s3(
     def _get_object(Bucket, Key):
         if get_object_raises and Key in get_object_raises:
             raise get_object_raises[Key]
-        if Key == "inputs/topics.json":
+        if Key == "user1/topics.json":
             return _body(json.dumps(topics_payload).encode())
-        if Key == "inputs/scout_instructions.md":
+        if Key == "shared/scout_instructions.md":
             return _body(SAMPLE_INSTRUCTIONS.encode())
-        if Key == "inputs/user_tastes.md":
+        if Key == "user1/user_tastes.md":
             return _body(SAMPLE_USER_TASTES.encode())
         # feedback event key: "<userId>/<idx>.json"
         idx = int(Key.split("/")[1].replace(".json", ""))
@@ -120,8 +120,9 @@ class TestScoutLambdaHandler:
         handler({"userId": "user1"}, None)
 
         s3.put_object.assert_called_once()
-        saved = json.loads(s3.put_object.call_args.kwargs["Body"])
-        assert saved == {"topics": UPDATED_TOPICS}
+        call_kwargs = s3.put_object.call_args.kwargs
+        assert call_kwargs["Key"] == "user1/topics.json"
+        assert json.loads(call_kwargs["Body"]) == {"topics": UPDATED_TOPICS}
 
     @patch.dict(os.environ, ENV)
     @patch("scout.lambda_handler.boto3.client")
@@ -197,7 +198,7 @@ class TestScoutLambdaHandler:
     @patch("scout.lambda_handler.boto3.client")
     def test_topics_load_failure_returns_500(self, mock_boto_client):
         sm = _make_sm()
-        s3 = _make_s3(get_object_raises={"inputs/topics.json": Exception("NoSuchKey")})
+        s3 = _make_s3(get_object_raises={"user1/topics.json": Exception("NoSuchKey")})
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
 
         with patch("scout.lambda_handler.logger.error") as error_spy:
@@ -212,7 +213,7 @@ class TestScoutLambdaHandler:
     @patch("scout.lambda_handler.boto3.client")
     def test_instructions_load_failure_returns_500(self, mock_boto_client):
         sm = _make_sm()
-        s3 = _make_s3(get_object_raises={"inputs/scout_instructions.md": Exception("NoSuchKey")})
+        s3 = _make_s3(get_object_raises={"shared/scout_instructions.md": Exception("NoSuchKey")})
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
 
         with patch("scout.lambda_handler.logger.error") as error_spy:

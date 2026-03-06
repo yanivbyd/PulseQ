@@ -19,14 +19,31 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
     return t;
   };
 
-  async function handleGenerate(): Promise<APIGatewayProxyStructuredResultV2> {
+  async function handleGenerate(body: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {
     const writerArn = process.env.WRITER_FUNCTION_ARN;
     if (!writerArn) {
       console.error("generate: WRITER_FUNCTION_ARN environment variable is not set");
       return jsonResponse(500, { error: "WRITER_FUNCTION_ARN is not configured" });
     }
+
+    let parsed: unknown;
+    try { parsed = JSON.parse(body ?? "{}"); } catch {
+      console.warn("generate: invalid JSON body");
+      return jsonResponse(400, { error: "Invalid JSON body" });
+    }
+
+    const { userId: genUserId } = parsed as Record<string, unknown>;
+    if (!genUserId || typeof genUserId !== "string") {
+      console.warn(`generate: missing or invalid userId: ${JSON.stringify(genUserId)}`);
+      return jsonResponse(400, { error: "userId is required" });
+    }
+
     try {
-      await lambdaClient.send(new InvokeCommand({ FunctionName: writerArn, InvocationType: "Event" }));
+      await lambdaClient.send(new InvokeCommand({
+        FunctionName: writerArn,
+        InvocationType: "Event",
+        Payload: JSON.stringify({ userId: genUserId }),
+      }));
       return jsonResponse(202, { status: "generating" });
     } catch (err) {
       console.error("generate: Lambda invoke failed:", err);
@@ -259,7 +276,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
     const path = event.rawPath ?? "";
     const method = event.requestContext?.http?.method;
 
-    if (path === "/api/generate" && method === "POST") return handleGenerate();
+    if (path === "/api/generate" && method === "POST") return handleGenerate(event.body);
     if (path === "/api/scout" && method === "POST") return handleScout(event.body);
     if (path === "/api/article-summaries") return handleArticleSummaries(event.queryStringParameters?.userId);
     if (path === "/api/mark-read" && method === "POST") return handleMarkRead(event.body);

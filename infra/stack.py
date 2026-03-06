@@ -200,6 +200,11 @@ class WriterStack(Stack):
             integration=web_integration,
         )
         web_api.add_routes(
+            path="/api/mark-read",
+            methods=[apigwv2.HttpMethod.POST],
+            integration=web_integration,
+        )
+        web_api.add_routes(
             path="/api/feedback",
             methods=[apigwv2.HttpMethod.POST],
             integration=web_integration,
@@ -253,8 +258,6 @@ class WriterStack(Stack):
         CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)
 
         # ── Daily scheduler: invoke Scout Lambda at 07:30 Asia/Jerusalem ─────
-        scout_user_id = os.environ.get("SCOUT_USER_ID", "user1")
-
         scout_scheduler_role = iam.Role(
             self,
             "ScoutSchedulerRole",
@@ -283,7 +286,7 @@ class WriterStack(Stack):
             target=scheduler.CfnSchedule.TargetProperty(
                 arn=scout_fn.function_arn,
                 role_arn=scout_scheduler_role.role_arn,
-                input=json.dumps({"userId": scout_user_id}),
+                input=json.dumps({"userId": "user1"}),
             ),
         )
 
@@ -316,6 +319,6 @@ class WriterStack(Stack):
             target=scheduler.CfnSchedule.TargetProperty(
                 arn=writer_fn.function_arn,
                 role_arn=scheduler_role.role_arn,
-                input=json.dumps({"userid": "user1"}),
+                input=json.dumps({"userId": "user1"}),
             ),
         )

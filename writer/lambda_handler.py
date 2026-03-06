@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import random
 import tempfile
@@ -15,7 +16,7 @@ try:
 except ImportError:
     from writer.writer import run  # type: ignore[no-redef]  # Test environment
 
-USER_ID = "user1"
+logger = logging.getLogger(__name__)
 
 # Module-level caches (populated on cold start)
 _api_key: str | None = None
@@ -40,9 +41,9 @@ def _get_ifttt_key() -> str:
     return _ifttt_key
 
 
-def _load_inputs(s3_client, bucket: str, tmp_inputs: Path) -> str:
-    for key in ("instructions.md", "topics.json"):
-        s3_client.download_file(bucket, f"inputs/{key}", str(tmp_inputs / key))
+def _load_inputs(s3_client, bucket: str, tmp_inputs: Path, user_id: str) -> str:
+    s3_client.download_file(bucket, "shared/instructions.md", str(tmp_inputs / "instructions.md"))
+    s3_client.download_file(bucket, f"{user_id}/topics.json", str(tmp_inputs / "topics.json"))
 
     topics_data = json.loads((tmp_inputs / "topics.json").read_text())
     topics = topics_data.get("topics", [])
@@ -70,6 +71,11 @@ def _send_notification(url: str, title: str) -> None:
 
 
 def handler(event, context):
+    user_id = event.get("userId")
+    if not user_id:
+        logger.error("writer: missing userId in event")
+        return {"statusCode": 400, "body": json.dumps({"error": "userId is required"})}
+
     input_bucket = os.environ["INPUT_BUCKET"]
     table_name = os.environ["ARTICLES_TABLE"]
 
@@ -87,7 +93,7 @@ def handler(event, context):
         tmp_inputs.mkdir()
 
         try:
-            topic = _load_inputs(s3, input_bucket, tmp_inputs)
+            topic = _load_inputs(s3, input_bucket, tmp_inputs, user_id)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to download inputs: {e}"})}
 
@@ -101,7 +107,7 @@ def handler(event, context):
     try:
         table = boto3.resource("dynamodb", region_name="eu-west-1").Table(table_name)
         table.put_item(Item={
-            "userid": USER_ID,
+            "userid": user_id,
             "creation_timestamp": creation_timestamp,
             "id": article["id"],
             "title": article["title"],

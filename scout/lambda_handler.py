@@ -42,7 +42,7 @@ def handler(event, context):
     s3 = boto3.client("s3", region_name="eu-west-1")
 
     try:
-        topics_obj = s3.get_object(Bucket=input_bucket, Key="inputs/topics.json")
+        topics_obj = s3.get_object(Bucket=input_bucket, Key=f"{user_id}/topics.json")
         topics = json.loads(topics_obj["Body"].read()).get("topics", [])
     except Exception as e:
         logger.error("scout: failed to load topics: %s", e)
@@ -50,10 +50,10 @@ def handler(event, context):
 
     try:
         instructions = s3.get_object(
-            Bucket=input_bucket, Key="inputs/scout_instructions.md"
+            Bucket=input_bucket, Key="shared/scout_instructions.md"
         )["Body"].read().decode()
         user_tastes = s3.get_object(
-            Bucket=input_bucket, Key="inputs/user_tastes.md"
+            Bucket=input_bucket, Key=f"{user_id}/user_tastes.md"
         )["Body"].read().decode()
     except Exception as e:
         logger.error("scout: failed to load instructions: %s", e)
@@ -79,7 +79,7 @@ def handler(event, context):
     try:
         s3.put_object(
             Bucket=input_bucket,
-            Key="inputs/topics.json",
+            Key=f"{user_id}/topics.json",
             Body=json.dumps({"topics": updated_topics}),
             ContentType="application/json",
         )

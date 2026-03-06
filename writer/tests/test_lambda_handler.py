@@ -55,9 +55,9 @@ def _make_s3_client(topics=None):
     topics_content = json.dumps(topics if topics is not None else SAMPLE_TOPICS)
 
     def _download_file(bucket, key, dest):
-        if key == "inputs/topics.json":
+        if key == "user1/topics.json":
             Path(dest).write_text(topics_content)
-        elif key == "inputs/instructions.md":
+        elif key == "shared/instructions.md":
             Path(dest).write_text("# Instructions")
 
     s3 = MagicMock()
@@ -100,7 +100,7 @@ class TestLambdaHandler:
         mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 200
         body = json.loads(result["body"])
@@ -134,7 +134,7 @@ class TestLambdaHandler:
         mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
-        handler({}, None)
+        handler({"userId": "user1"}, None)
 
         _, kwargs = mock_run.call_args
         assert kwargs["topic"] == "N+1 Queries — Detection patterns."
@@ -149,7 +149,7 @@ class TestLambdaHandler:
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 500
         assert "Failed to download inputs" in json.loads(result["body"])["error"]
@@ -168,7 +168,7 @@ class TestLambdaHandler:
         mock_urlopen.side_effect = Exception("IFTTT unreachable")
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 200
 
@@ -187,7 +187,7 @@ class TestLambdaHandler:
         mock_urlopen.side_effect = [Exception("warm-up timeout"), None]
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 200
         assert mock_urlopen.call_count == 2
@@ -206,11 +206,20 @@ class TestLambdaHandler:
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 500
         assert "Failed to download inputs" in json.loads(result["body"])["error"]
         mock_run.assert_not_called()
+
+    @patch.dict(os.environ, ENV)
+    def test_missing_user_id_returns_400(self):
+        with patch("writer.lambda_handler.logger.error") as error_spy:
+            from writer.lambda_handler import handler
+            result = handler({}, None)
+        assert result["statusCode"] == 400
+        assert "userId" in json.loads(result["body"])["error"]
+        error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.boto3.client")
@@ -220,7 +229,7 @@ class TestLambdaHandler:
         mock_boto_client.return_value = sm
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 500
         assert "Failed to retrieve secret" in json.loads(result["body"])["error"]
@@ -238,8 +247,8 @@ class TestLambdaHandler:
         mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
-        handler({}, None)
-        handler({}, None)
+        handler({"userId": "user1"}, None)
+        handler({"userId": "user1"}, None)
 
         # Each secret fetched only once despite two handler invocations
         assert sm.get_secret_value.call_count == 2  # one per secret, not per invocation
@@ -262,7 +271,7 @@ class TestLambdaHandler:
         mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 500
         assert "Failed to save article" in json.loads(result["body"])["error"]
@@ -276,7 +285,7 @@ class TestLambdaHandler:
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
 
         from writer.lambda_handler import handler
-        result = handler({}, None)
+        result = handler({"userId": "user1"}, None)
 
         assert result["statusCode"] == 500
         assert "writer.run() failed" in json.loads(result["body"])["error"]

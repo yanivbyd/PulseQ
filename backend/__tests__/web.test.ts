@@ -223,22 +223,37 @@ describe("POST /api/generate", () => {
   });
   afterEach(() => { delete process.env.WRITER_FUNCTION_ARN; });
 
-  test("invokes writer Lambda with InvocationType Event and returns 202", async () => {
+  test("invokes writer Lambda with InvocationType Event and userId payload, returns 202", async () => {
     const lambda = makeMockLambda();
     const result = await createHandler(makeMockDdb({}), lambda, mockS3)(
-      makeGatewayEvent("/api/generate", undefined, "POST"),
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(202);
     expect(JSON.parse(result.body as string)).toEqual({ status: "generating" });
     const cmd = (lambda.send as jest.Mock).mock.calls[0][0] as InvokeCommand;
     expect(cmd.input.FunctionName).toBe(process.env.WRITER_FUNCTION_ARN);
     expect(cmd.input.InvocationType).toBe("Event");
+    const payloadStr = typeof cmd.input.Payload === "string"
+      ? cmd.input.Payload
+      : Buffer.from(cmd.input.Payload as Uint8Array).toString();
+    expect(JSON.parse(payloadStr)).toEqual({ userId: "user1" });
+  });
+
+  test("returns 400 when userId is missing", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({})),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/userId/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("userId"));
+    warnSpy.mockRestore();
   });
 
   test("returns 500 when Lambda invoke fails", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     const result = await createHandler(makeMockDdb({}), makeMockLambda(true), mockS3)(
-      makeGatewayEvent("/api/generate", undefined, "POST"),
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Lambda invoke failed"), expect.any(Error));

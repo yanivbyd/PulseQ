@@ -45,10 +45,14 @@ describe("fetchArticle", () => {
 });
 
 describe("triggerGenerate", () => {
-  test("sends POST /api/generate and resolves on 202", async () => {
+  test("sends POST /api/generate with userId and resolves on 202", async () => {
     mockFetch(true, { status: "generating" }, 202);
     await expect(triggerGenerate()).resolves.toBeUndefined();
-    expect(fetch).toHaveBeenCalledWith("/api/generate", { method: "POST" });
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("/api/generate");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body)).toMatchObject({ userId: expect.any(String) });
   });
 
   test("throws on 5xx", async () => {
