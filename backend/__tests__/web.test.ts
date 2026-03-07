@@ -1,7 +1,7 @@
 import { createHandler } from "../index";
-import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
 function makeGatewayEvent(
@@ -27,18 +27,13 @@ function makeMockS3(shouldFail = false) {
   return { send } as unknown as S3Client;
 }
 
-function makeTopicsS3(topics: Array<{ title: string; description: string }> | "NoSuchKey" | "error" = []) {
+function makeTopicsDdb(topics: Array<{ title: string; description: string }> | null | "error") {
   const send = jest.fn().mockImplementation(() => {
-    if (topics === "NoSuchKey") {
-      const err = Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" });
-      return Promise.reject(err);
-    }
-    if (topics === "error") return Promise.reject(new Error("S3 error"));
-    return Promise.resolve({
-      Body: { transformToString: () => Promise.resolve(JSON.stringify({ topics })) },
-    });
+    if (topics === "error") return Promise.reject(new Error("DDB error"));
+    const item = topics !== null ? { userId: "user1", topics } : undefined;
+    return Promise.resolve({ Item: item });
   });
-  return { send } as unknown as S3Client;
+  return { send } as unknown as DynamoDBDocumentClient;
 }
 
 // Routes main-table queries to the matching userId bucket; searches all items for ById GSI queries.
@@ -113,36 +108,33 @@ describe("GET /api/topics", () => {
 
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
-    process.env.INPUT_BUCKET = "pulseq-inputs";
+    process.env.TOPICS_TABLE = "pulseq-topics";
   });
-  afterEach(() => { delete process.env.INPUT_BUCKET; });
+  afterEach(() => { delete process.env.TOPICS_TABLE; });
 
   test("returns topics for a valid userId", async () => {
-    const s3 = makeTopicsS3(TOPICS);
-    const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
+    const ddb = makeTopicsDdb(TOPICS);
+    const result = await createHandler(ddb, mockLambda, mockS3)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body as string)).toEqual({ topics: TOPICS });
-    const cmd = (s3.send as jest.Mock).mock.calls[0][0] as GetObjectCommand;
-    expect(cmd.input.Bucket).toBe("pulseq-inputs");
-    expect(cmd.input.Key).toBe("user1/topics.json");
+    const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as GetCommand;
+    expect(cmd.input.TableName).toBe("pulseq-topics");
+    expect(cmd.input.Key).toEqual({ userId: "user1" });
   });
 
-  test("returns 200 with empty topics array when file does not exist (NoSuchKey)", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeTopicsS3("NoSuchKey"))(
+  test("returns 200 with empty topics when item does not exist in DDB", async () => {
+    const result = await createHandler(makeTopicsDdb(null), mockLambda, mockS3)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body as string)).toEqual({ topics: [] });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no topics file found"));
-    warnSpy.mockRestore();
   });
 
   test("returns 400 when userId is missing", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeTopicsS3())(
+    const result = await createHandler(makeTopicsDdb([]), mockLambda, mockS3)(
       makeGatewayEvent("/api/topics"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -151,25 +143,25 @@ describe("GET /api/topics", () => {
     errorSpy.mockRestore();
   });
 
-  test("returns 500 when INPUT_BUCKET is not set", async () => {
+  test("returns 500 when TOPICS_TABLE is not set", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    delete process.env.INPUT_BUCKET;
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeTopicsS3())(
+    delete process.env.TOPICS_TABLE;
+    const result = await createHandler(makeTopicsDdb(TOPICS), mockLambda, mockS3)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
-    expect(JSON.parse(result.body as string).error).toMatch(/INPUT_BUCKET/);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("INPUT_BUCKET"));
+    expect(JSON.parse(result.body as string).error).toMatch(/TOPICS_TABLE/);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("TOPICS_TABLE"));
     errorSpy.mockRestore();
   });
 
-  test("returns 500 on unexpected S3 error", async () => {
+  test("returns 500 on DDB error", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeTopicsS3("error"))(
+    const result = await createHandler(makeTopicsDdb("error"), mockLambda, mockS3)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("S3 read failed"), expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("DDB read failed"), expect.any(Error));
     errorSpy.mockRestore();
   });
 });

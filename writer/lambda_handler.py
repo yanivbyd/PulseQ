@@ -41,14 +41,13 @@ def _get_ifttt_key() -> str:
     return _ifttt_key
 
 
-def _load_inputs(s3_client, bucket: str, tmp_inputs: Path, user_id: str) -> str:
+def _load_inputs(s3_client, bucket: str, topics_table, tmp_inputs: Path, user_id: str) -> str:
     s3_client.download_file(bucket, "shared/instructions.md", str(tmp_inputs / "instructions.md"))
-    s3_client.download_file(bucket, f"{user_id}/topics.json", str(tmp_inputs / "topics.json"))
 
-    topics_data = json.loads((tmp_inputs / "topics.json").read_text())
-    topics = topics_data.get("topics", [])
+    resp = topics_table.get_item(Key={"userId": user_id})
+    topics: list[dict[str, str]] = resp.get("Item", {}).get("topics", [])
     if not topics:
-        raise ValueError("topics.json contains no topics")
+        raise ValueError("no topics found for user")
     chosen = random.choice(topics)
     return f"{chosen['title']} — {chosen['description']}"
 
@@ -87,13 +86,14 @@ def handler(event, context):
     os.environ["OPENAI_API_KEY"] = api_key
 
     s3 = boto3.client("s3", region_name="eu-west-1")
+    topics_table = boto3.resource("dynamodb", region_name="eu-west-1").Table(os.environ["TOPICS_TABLE"])
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_inputs = Path(tmp) / "inputs"
         tmp_inputs.mkdir()
 
         try:
-            topic = _load_inputs(s3, input_bucket, tmp_inputs, user_id)
+            topic = _load_inputs(s3, input_bucket, topics_table, tmp_inputs, user_id)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to download inputs: {e}"})}
 

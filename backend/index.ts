@@ -1,7 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
 function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructuredResultV2 {
@@ -180,22 +180,17 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       console.error("topics: userId is required");
       return jsonResponse(400, { error: "userId is required" });
     }
-    const bucket = process.env.INPUT_BUCKET;
-    if (!bucket) {
-      console.error("topics: INPUT_BUCKET environment variable is not set");
-      return jsonResponse(500, { error: "INPUT_BUCKET is not configured" });
+    const topicsTable = process.env.TOPICS_TABLE;
+    if (!topicsTable) {
+      console.error("topics: TOPICS_TABLE environment variable is not set");
+      return jsonResponse(500, { error: "TOPICS_TABLE is not configured" });
     }
     try {
-      const result = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: `${userId}/topics.json` }));
-      const body = await result.Body?.transformToString();
-      const data = JSON.parse(body ?? "{}") as { topics?: Array<{ title: string; description: string }> };
-      return jsonResponse(200, { topics: data.topics ?? [] });
-    } catch (err: unknown) {
-      if ((err as { name?: string }).name === "NoSuchKey") {
-        console.warn(`topics: no topics file found for userId=${userId}`);
-        return jsonResponse(200, { topics: [] });
-      }
-      console.error(`topics: S3 read failed for userId=${userId}:`, err);
+      const result = await ddbClient.send(new GetCommand({ TableName: topicsTable, Key: { userId } }));
+      const topics = (result.Item?.topics as Array<{ title: string; description: string }>) ?? [];
+      return jsonResponse(200, { topics });
+    } catch (err) {
+      console.error(`topics: DDB read failed for userId=${userId}:`, err);
       return jsonResponse(500, { error: "Failed to read topics" });
     }
   }

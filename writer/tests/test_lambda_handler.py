@@ -15,6 +15,7 @@ ENV = {
     "IFTTT_SECRET_NAME": "pulseq/ifttt-key",
     "INPUT_BUCKET": "pulseq-inputs",
     "ARTICLES_TABLE": "pulseq-articles",
+    "TOPICS_TABLE": "pulseq-topics",
     "WEB_BASE_URL": "https://test-web.execute-api.eu-west-1.amazonaws.com",
 }
 
@@ -23,9 +24,7 @@ SECRETS = {
     "pulseq/ifttt-key": "ifttt-test-key",
 }
 
-SAMPLE_TOPICS = {
-    "topics": [{"title": "N+1 Queries", "description": "Detection patterns."}]
-}
+SAMPLE_TOPICS = [{"title": "N+1 Queries", "description": "Detection patterns."}]
 
 SAMPLE_ARTICLE = {
     "id": "abc12",
@@ -50,14 +49,10 @@ def _make_sm_client():
     return sm
 
 
-def _make_s3_client(topics=None):
-    """Return a mock S3 client that writes JSON/md content to the dest path on download."""
-    topics_content = json.dumps(topics if topics is not None else SAMPLE_TOPICS)
-
+def _make_s3_client():
+    """Return a mock S3 client that writes instructions.md to the dest path."""
     def _download_file(bucket, key, dest):
-        if key == "user1/topics.json":
-            Path(dest).write_text(topics_content)
-        elif key == "shared/instructions.md":
+        if key == "shared/instructions.md":
             Path(dest).write_text("# Instructions")
 
     s3 = MagicMock()
@@ -65,12 +60,29 @@ def _make_s3_client(topics=None):
     return s3
 
 
-def _make_ddb_resource():
-    """Return a (ddb_resource_mock, table_mock) pair."""
+def _make_topics_table(topics=None):
+    """Return a mock DDB Table for topics. topics=None means missing item."""
     table = MagicMock()
+    if topics is None:
+        table.get_item.return_value = {}
+    else:
+        table.get_item.return_value = {"Item": {"userId": "user1", "topics": topics}}
+    return table
+
+
+def _make_articles_table():
+    table = MagicMock()
+    return table
+
+
+def _make_ddb_resource(topics_table=None, articles_table=None):
+    """Return a mock boto3 DynamoDB resource. Table() returns topics_table or
+    articles_table based on call order (topics first, articles second)."""
+    tt = topics_table or _make_topics_table(SAMPLE_TOPICS)
+    at = articles_table or _make_articles_table()
     ddb = MagicMock()
-    ddb.Table.return_value = table
-    return ddb, table
+    ddb.Table.side_effect = lambda name: tt if name == "pulseq-topics" else at
+    return ddb, tt, at
 
 
 def _fake_run(base_dir, topic):
@@ -95,7 +107,7 @@ class TestLambdaHandler:
     def test_happy_path(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, table = _make_ddb_resource()
+        ddb, _, articles_table = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -106,8 +118,8 @@ class TestLambdaHandler:
         body = json.loads(result["body"])
         assert body["url"] == "https://test-web.execute-api.eu-west-1.amazonaws.com/abc12"
 
-        table.put_item.assert_called_once()
-        item = table.put_item.call_args.kwargs["Item"]
+        articles_table.put_item.assert_called_once()
+        item = articles_table.put_item.call_args.kwargs["Item"]
         assert item["userid"] == "user1"
         assert item["id"] == "abc12"
         assert item["title"] == "How Load Balancers Work"
@@ -126,10 +138,10 @@ class TestLambdaHandler:
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
     def test_run_receives_topic(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
-        """Lambda picks a topic from topics.json and passes it to run()."""
+        """Lambda picks a topic from DDB and passes it to run()."""
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -141,12 +153,32 @@ class TestLambdaHandler:
         assert "history" not in kwargs
 
     @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
-    def test_empty_topics_list_fails(self, mock_boto_client):
-        """topics.json with an empty array returns 500."""
+    def test_empty_topics_list_fails(self, mock_boto_client, mock_boto_resource):
+        """DDB returns empty topics list → 500."""
         sm = _make_sm_client()
-        s3 = _make_s3_client(topics={"topics": []})
+        s3 = _make_s3_client()
+        ddb, _, _ = _make_ddb_resource(topics_table=_make_topics_table([]))
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
+
+        from writer.lambda_handler import handler
+        result = handler({"userId": "user1"}, None)
+
+        assert result["statusCode"] == 500
+        assert "Failed to download inputs" in json.loads(result["body"])["error"]
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.boto3.resource")
+    @patch("writer.lambda_handler.boto3.client")
+    def test_missing_topics_item_fails(self, mock_boto_client, mock_boto_resource):
+        """DDB returns no item for user → 500."""
+        sm = _make_sm_client()
+        s3 = _make_s3_client()
+        ddb, _, _ = _make_ddb_resource(topics_table=_make_topics_table(None))
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         result = handler({"userId": "user1"}, None)
@@ -162,7 +194,7 @@ class TestLambdaHandler:
     def test_notification_failure_is_nonfatal(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
         mock_urlopen.side_effect = Exception("IFTTT unreachable")
@@ -181,7 +213,7 @@ class TestLambdaHandler:
         """Warm-up failure does not block notification or success response."""
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
         mock_urlopen.side_effect = [Exception("warm-up timeout"), None]
@@ -194,16 +226,19 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_s3_download_failure(self, mock_run, mock_boto_client, mock_urlopen):
+    def test_s3_download_failure(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         from botocore.exceptions import ClientError
         sm = _make_sm_client()
         s3 = _make_s3_client()
         s3.download_file.side_effect = ClientError(
             {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "download_file"
         )
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         result = handler({"userId": "user1"}, None)
@@ -242,7 +277,7 @@ class TestLambdaHandler:
     def test_api_key_cached_across_calls(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -262,11 +297,12 @@ class TestLambdaHandler:
         from botocore.exceptions import ClientError
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, table = _make_ddb_resource()
-        table.put_item.side_effect = ClientError(
+        articles_table = _make_articles_table()
+        articles_table.put_item.side_effect = ClientError(
             {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "Throttled"}},
             "put_item",
         )
+        ddb, _, _ = _make_ddb_resource(articles_table=articles_table)
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -277,12 +313,15 @@ class TestLambdaHandler:
         assert "Failed to save article" in json.loads(result["body"])["error"]
 
     @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=RuntimeError("writer failed"))
-    def test_writer_run_failure(self, mock_run, mock_boto_client):
+    def test_writer_run_failure(self, mock_run, mock_boto_client, mock_boto_resource):
         sm = _make_sm_client()
         s3 = _make_s3_client()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
 
         from writer.lambda_handler import handler
         result = handler({"userId": "user1"}, None)

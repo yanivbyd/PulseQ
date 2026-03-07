@@ -7,9 +7,9 @@ import boto3
 logger = logging.getLogger(__name__)
 
 try:
-    from scout import run  # Lambda environment: scout.py at bundle root
+    from scout import run, Topic  # Lambda environment: scout.py at bundle root
 except ImportError:
-    from scout.scout import run  # type: ignore[no-redef]  # Test environment
+    from scout.scout import run, Topic  # type: ignore[no-redef]  # Test environment
 
 # Module-level cache (populated on cold start)
 _api_key: str | None = None
@@ -32,6 +32,7 @@ def handler(event, context):
 
     input_bucket = os.environ["INPUT_BUCKET"]
     events_bucket = os.environ["EVENTS_BUCKET"]
+    topics_table_name = os.environ["TOPICS_TABLE"]
 
     try:
         api_key = _get_api_key()
@@ -40,13 +41,14 @@ def handler(event, context):
         return {"statusCode": 500, "body": json.dumps({"error": f"Failed to retrieve secret: {e}"})}
 
     s3 = boto3.client("s3", region_name="eu-west-1")
+    topics_table = boto3.resource("dynamodb", region_name="eu-west-1").Table(topics_table_name)
 
     try:
-        topics_obj = s3.get_object(Bucket=input_bucket, Key=f"{user_id}/topics.json")
-        topics = json.loads(topics_obj["Body"].read()).get("topics", [])
+        resp = topics_table.get_item(Key={"userId": user_id})
+        topics: list[Topic] = resp.get("Item", {}).get("topics", [])
     except Exception as e:
-        logger.error("scout: failed to load topics: %s", e)
-        return {"statusCode": 500, "body": json.dumps({"error": f"Failed to load topics: {e}"})}
+        logger.warning("scout: failed to load topics from DDB, proceeding with empty list: %s", e)
+        topics = []
 
     try:
         instructions = s3.get_object(
@@ -77,12 +79,7 @@ def handler(event, context):
         return {"statusCode": 500, "body": json.dumps({"error": f"scout.run() failed: {e}"})}
 
     try:
-        s3.put_object(
-            Bucket=input_bucket,
-            Key=f"{user_id}/topics.json",
-            Body=json.dumps({"topics": updated_topics}),
-            ContentType="application/json",
-        )
+        topics_table.put_item(Item={"userId": user_id, "topics": updated_topics})
     except Exception as e:
         logger.error("scout: failed to save topics: %s", e)
         return {"statusCode": 500, "body": json.dumps({"error": f"Failed to save topics: {e}"})}

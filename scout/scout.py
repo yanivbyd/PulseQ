@@ -1,13 +1,19 @@
 import json
 import logging
 import re
+from typing import TypedDict
 
 import openai
+
+
+class Topic(TypedDict):
+    title: str
+    description: str
 
 logger = logging.getLogger(__name__)
 
 
-def build_prompt(instructions: str, user_tastes: str, topics: list, feedback_events: list) -> tuple[str, str]:
+def build_prompt(instructions: str, user_tastes: str, topics: list[Topic], feedback_events: list) -> tuple[str, str]:
     system_prompt = f"{instructions}\n\n## User Taste Profile\n{user_tastes}"
 
     topics_json = json.dumps(topics, indent=2)
@@ -27,7 +33,7 @@ def build_prompt(instructions: str, user_tastes: str, topics: list, feedback_eve
     return system_prompt, user_prompt
 
 
-def parse_response(content: str) -> list:
+def parse_response(content: str) -> list[Topic]:
     content = content.strip()
     match = re.match(r"^```(?:json)?\n?(.*)\n?```\s*$", content, re.DOTALL | re.IGNORECASE)
     if match:
@@ -41,7 +47,7 @@ def parse_response(content: str) -> list:
     return result
 
 
-def run(instructions: str, user_tastes: str, topics: list, feedback_events: list, api_key: str) -> list:
+def run(instructions: str, user_tastes: str, topics: list[Topic], feedback_events: list, api_key: str) -> list[Topic]:
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY is not set.")
 

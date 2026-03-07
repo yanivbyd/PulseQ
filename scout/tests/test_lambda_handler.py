@@ -10,6 +10,7 @@ ENV = {
     "SECRET_NAME": "pulseq/openai-api-key",
     "INPUT_BUCKET": "pulseq-inputs",
     "EVENTS_BUCKET": "pulseq-events",
+    "TOPICS_TABLE": "pulseq-topics",
 }
 
 SAMPLE_INSTRUCTIONS = "You are a scout."
@@ -26,22 +27,14 @@ def _body(data: bytes):
 def _make_s3(
     feedback_events=None,
     get_object_raises=None,
-    put_object_raises=None,
     list_raises=None,
 ):
-    """Build a mock S3 client.
-
-    get_object_raises: dict mapping S3 key -> exception to raise for that key.
-    list_raises: exception to raise on list_objects_v2.
-    """
-    topics_payload = {"topics": SAMPLE_TOPICS}
+    """Build a mock S3 client (instructions, user_tastes, feedback events only)."""
     events = feedback_events or []
 
     def _get_object(Bucket, Key):
         if get_object_raises and Key in get_object_raises:
             raise get_object_raises[Key]
-        if Key == "user1/topics.json":
-            return _body(json.dumps(topics_payload).encode())
         if Key == "shared/scout_instructions.md":
             return _body(SAMPLE_INSTRUCTIONS.encode())
         if Key == "user1/user_tastes.md":
@@ -59,8 +52,6 @@ def _make_s3(
         s3.list_objects_v2.side_effect = list_raises
     else:
         s3.list_objects_v2.return_value = {"Contents": list_contents}
-    if put_object_raises:
-        s3.put_object.side_effect = put_object_raises
     return s3
 
 
@@ -68,6 +59,25 @@ def _make_sm():
     sm = MagicMock()
     sm.get_secret_value.return_value = {"SecretString": "sk-test"}
     return sm
+
+
+def _make_topics_table(topics=SAMPLE_TOPICS, get_raises=None, put_raises=None):
+    """Build a mock DynamoDB Table for topics."""
+    table = MagicMock()
+    if get_raises:
+        table.get_item.side_effect = get_raises
+    else:
+        item = {"userId": "user1", "topics": topics} if topics is not None else None
+        table.get_item.return_value = {"Item": item} if item is not None else {}
+    if put_raises:
+        table.put_item.side_effect = put_raises
+    return table
+
+
+def _make_ddb_resource(topics_table):
+    ddb = MagicMock()
+    ddb.Table.return_value = topics_table
+    return ddb
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -80,11 +90,13 @@ class TestScoutLambdaHandler:
     # ── happy path ────────────────────────────────────────────────────────────
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_happy_path(self, mock_run, mock_boto_client):
+    def test_happy_path(self, mock_run, mock_boto_client, mock_boto_resource):
         sm, s3 = _make_sm(), _make_s3()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         from scout.lambda_handler import handler
         result = handler({"userId": "user1"}, None)
@@ -93,11 +105,13 @@ class TestScoutLambdaHandler:
         assert json.loads(result["body"]) == {"userId": "user1", "total": 10}
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_run_called_with_s3_loaded_content(self, mock_run, mock_boto_client):
+    def test_run_called_with_ddb_loaded_topics(self, mock_run, mock_boto_client, mock_boto_resource):
         sm, s3 = _make_sm(), _make_s3(feedback_events=[FEEDBACK_EVENT])
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         from scout.lambda_handler import handler
         handler({"userId": "user1"}, None)
@@ -110,32 +124,49 @@ class TestScoutLambdaHandler:
         assert mock_run.call_args.kwargs["api_key"] == "sk-test"
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_topics_saved_in_wrapper_format(self, mock_run, mock_boto_client):
+    def test_topics_saved_to_ddb(self, mock_run, mock_boto_client, mock_boto_resource):
         sm, s3 = _make_sm(), _make_s3()
+        topics_table = _make_topics_table()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(topics_table)
 
         from scout.lambda_handler import handler
         handler({"userId": "user1"}, None)
 
-        s3.put_object.assert_called_once()
-        call_kwargs = s3.put_object.call_args.kwargs
-        assert call_kwargs["Key"] == "user1/topics.json"
-        assert json.loads(call_kwargs["Body"]) == {"topics": UPDATED_TOPICS}
+        topics_table.put_item.assert_called_once_with(
+            Item={"userId": "user1", "topics": UPDATED_TOPICS}
+        )
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_feedback_events_sorted_descending(self, mock_run, mock_boto_client):
+    def test_missing_topics_row_treated_as_empty(self, mock_run, mock_boto_client, mock_boto_resource):
+        """Missing DDB item → scout generates fresh topics (run() called with [])."""
+        sm, s3 = _make_sm(), _make_s3()
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table(topics=None))
+
+        from scout.lambda_handler import handler
+        result = handler({"userId": "user1"}, None)
+
+        assert result["statusCode"] == 200
+        assert mock_run.call_args.args[2] == []
+
+    @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
+    @patch("scout.lambda_handler.boto3.client")
+    @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
+    def test_feedback_events_sorted_descending(self, mock_run, mock_boto_client, mock_boto_resource):
         """Events are passed to run() in descending key order (newest first)."""
         event_a = {**FEEDBACK_EVENT, "articleTitle": "Article A"}
         event_b = {**FEEDBACK_EVENT, "articleTitle": "Article B"}
-        # S3 returns keys ascending: user1/0.json (A), user1/1.json (B)
-        # After descending sort: user1/1.json (B), user1/0.json (A)
-        sm = _make_sm()
-        s3 = _make_s3(feedback_events=[event_a, event_b])
+        sm, s3 = _make_sm(), _make_s3(feedback_events=[event_a, event_b])
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         from scout.lambda_handler import handler
         handler({"userId": "user1"}, None)
@@ -143,23 +174,13 @@ class TestScoutLambdaHandler:
         assert mock_run.call_args.args[3] == [event_b, event_a]
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_feedback_events_filtered_by_user_id(self, mock_run, mock_boto_client):
-        sm, s3 = _make_sm(), _make_s3(feedback_events=[FEEDBACK_EVENT])
-        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
-
-        from scout.lambda_handler import handler
-        handler({"userId": "user1"}, None)
-
-        s3.list_objects_v2.assert_called_once_with(Bucket="pulseq-events", Prefix="user1/")
-
-    @patch.dict(os.environ, ENV)
-    @patch("scout.lambda_handler.boto3.client")
-    @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_api_key_cached_across_calls(self, mock_run, mock_boto_client):
+    def test_api_key_cached_across_calls(self, mock_run, mock_boto_client, mock_boto_resource):
         sm, s3 = _make_sm(), _make_s3()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         from scout.lambda_handler import handler
         handler({"userId": "user1"}, None)
@@ -195,26 +216,33 @@ class TestScoutLambdaHandler:
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
-    def test_topics_load_failure_returns_500(self, mock_boto_client):
-        sm = _make_sm()
-        s3 = _make_s3(get_object_raises={"user1/topics.json": Exception("NoSuchKey")})
+    @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
+    def test_topics_ddb_failure_is_failopen(self, mock_run, mock_boto_client, mock_boto_resource):
+        """DDB GetItem failure → proceed with empty topics, warn."""
+        sm, s3 = _make_sm(), _make_s3()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(
+            _make_topics_table(get_raises=Exception("DDB unavailable"))
+        )
 
-        with patch("scout.lambda_handler.logger.error") as error_spy:
+        with patch("scout.lambda_handler.logger.warning") as warn_spy:
             from scout.lambda_handler import handler
             result = handler({"userId": "user1"}, None)
 
-        assert result["statusCode"] == 500
-        assert "Failed to load topics" in json.loads(result["body"])["error"]
-        error_spy.assert_called_once()
+        assert result["statusCode"] == 200
+        warn_spy.assert_called_once()
+        assert mock_run.call_args.args[2] == []
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
-    def test_instructions_load_failure_returns_500(self, mock_boto_client):
+    def test_instructions_load_failure_returns_500(self, mock_boto_client, mock_boto_resource):
         sm = _make_sm()
         s3 = _make_s3(get_object_raises={"shared/scout_instructions.md": Exception("NoSuchKey")})
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         with patch("scout.lambda_handler.logger.error") as error_spy:
             from scout.lambda_handler import handler
@@ -225,12 +253,13 @@ class TestScoutLambdaHandler:
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_feedback_events_failure_is_failopen(self, mock_run, mock_boto_client):
-        sm = _make_sm()
-        s3 = _make_s3(list_raises=Exception("S3 listing error"))
+    def test_feedback_events_failure_is_failopen(self, mock_run, mock_boto_client, mock_boto_resource):
+        sm, s3 = _make_sm(), _make_s3(list_raises=Exception("S3 listing error"))
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         with patch("scout.lambda_handler.logger.warning") as warn_spy:
             from scout.lambda_handler import handler
@@ -238,14 +267,16 @@ class TestScoutLambdaHandler:
 
         assert result["statusCode"] == 200
         warn_spy.assert_called_once()
-        assert mock_run.call_args.args[3] == []  # feedback_events is empty
+        assert mock_run.call_args.args[3] == []
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", side_effect=Exception("OpenAI down"))
-    def test_run_failure_returns_500(self, mock_run, mock_boto_client):
+    def test_run_failure_returns_500(self, mock_run, mock_boto_client, mock_boto_resource):
         sm, s3 = _make_sm(), _make_s3()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(_make_topics_table())
 
         with patch("scout.lambda_handler.logger.error") as error_spy:
             from scout.lambda_handler import handler
@@ -256,12 +287,15 @@ class TestScoutLambdaHandler:
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
+    @patch("scout.lambda_handler.boto3.resource")
     @patch("scout.lambda_handler.boto3.client")
     @patch("scout.lambda_handler.run", return_value=UPDATED_TOPICS)
-    def test_save_topics_failure_returns_500(self, mock_run, mock_boto_client):
-        sm = _make_sm()
-        s3 = _make_s3(put_object_raises=Exception("S3 put failed"))
+    def test_save_topics_failure_returns_500(self, mock_run, mock_boto_client, mock_boto_resource):
+        sm, s3 = _make_sm(), _make_s3()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = _make_ddb_resource(
+            _make_topics_table(put_raises=Exception("DDB put failed"))
+        )
 
         with patch("scout.lambda_handler.logger.error") as error_spy:
             from scout.lambda_handler import handler

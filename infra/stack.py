@@ -43,6 +43,16 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
+        # ── DynamoDB: topics ─────────────────────────────────────────────────
+        topics_table = dynamodb.Table(
+            self,
+            "TopicsTable",
+            table_name="pulseq-topics",
+            partition_key=dynamodb.Attribute(name="userId", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+
         # ── DynamoDB: articles ───────────────────────────────────────────────
         articles_table = dynamodb.Table(
             self,
@@ -97,6 +107,7 @@ class WriterStack(Stack):
                 "SECRET_NAME": secret.secret_name,
                 "IFTTT_SECRET_NAME": ifttt_secret.secret_name,
                 "ARTICLES_TABLE": articles_table.table_name,
+                "TOPICS_TABLE": topics_table.table_name,
             },
         )
 
@@ -105,6 +116,7 @@ class WriterStack(Stack):
         secret.grant_read(writer_fn)
         ifttt_secret.grant_read(writer_fn)
         articles_table.grant(writer_fn, "dynamodb:PutItem")
+        topics_table.grant_read_data(writer_fn)
 
         # ── API Gateway HTTP API (writer) ────────────────────────────────────
         http_api = apigwv2.HttpApi(self, "WriterApi")
@@ -150,12 +162,14 @@ class WriterStack(Stack):
                 "INPUT_BUCKET": input_bucket.bucket_name,
                 "EVENTS_BUCKET": events_bucket.bucket_name,
                 "SECRET_NAME": secret.secret_name,
+                "TOPICS_TABLE": topics_table.table_name,
             },
         )
 
-        input_bucket.grant_read_write(scout_fn)
+        input_bucket.grant_read(scout_fn)
         events_bucket.grant_read(scout_fn)
         secret.grant_read(scout_fn)
+        topics_table.grant_read_write_data(scout_fn)
 
         # ── Backend Lambda (Node.js — JSON API for articles) ─────────────────
         web_fn = nodejs.NodejsFunction(
@@ -168,20 +182,20 @@ class WriterStack(Stack):
             timeout=Duration.seconds(10),
             environment={
                 "ARTICLES_TABLE": articles_table.table_name,
+                "TOPICS_TABLE": topics_table.table_name,
             },
             bundling=nodejs.BundlingOptions(
                 external_modules=["@aws-sdk/*"],
             ),
         )
         articles_table.grant(web_fn, "dynamodb:Query", "dynamodb:UpdateItem")
+        topics_table.grant_read_data(web_fn)
         writer_fn.grant_invoke(web_fn)
         scout_fn.grant_invoke(web_fn)
         events_bucket.grant_put(web_fn)
         web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
         web_fn.add_environment("SCOUT_FUNCTION_ARN", scout_fn.function_arn)
         web_fn.add_environment("EVENTS_BUCKET", events_bucket.bucket_name)
-        web_fn.add_environment("INPUT_BUCKET", input_bucket.bucket_name)
-        input_bucket.grant_read(web_fn)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
