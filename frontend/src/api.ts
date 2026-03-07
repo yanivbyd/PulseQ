@@ -1,3 +1,12 @@
+export interface Topic { title: string; description: string; }
+
+export async function fetchTopics(userId: string): Promise<Topic[]> {
+  const res = await fetch(`/api/topics?userId=${encodeURIComponent(userId)}`);
+  if (!res.ok) throw new Error(`Failed to fetch topics: ${res.status}`);
+  const data = await res.json();
+  return data.topics as Topic[];
+}
+
 export interface ArticleSummary {
   id: string;
   title: string;

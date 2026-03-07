@@ -8,7 +8,6 @@ import * as api from "../api";
 vi.mock("../api", () => ({
   fetchArticleSummaries: vi.fn(),
   triggerGenerate: vi.fn(),
-  triggerScout: vi.fn(),
   postMarkRead: vi.fn(),
 }));
 
@@ -27,7 +26,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue(ARTICLES);
   vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
-  vi.mocked(api.triggerScout).mockResolvedValue(undefined);
   vi.mocked(api.postMarkRead).mockResolvedValue(undefined);
 });
 
@@ -65,10 +63,16 @@ describe("HomePage article list", () => {
 });
 
 describe("HomePage bottom bar", () => {
-  test("renders generate and scout buttons", async () => {
+  test("renders generate button and topics link", async () => {
     renderHomePage();
     expect(await screen.findByRole("button", { name: "Generate" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scout" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Topics" })).toBeInTheDocument();
+  });
+
+  test("topics link points to /topics", async () => {
+    renderHomePage();
+    const link = await screen.findByRole("link", { name: "Topics" });
+    expect(link).toHaveAttribute("href", "/topics");
   });
 
   test("clicking generate calls triggerGenerate and shows toast", async () => {
@@ -77,14 +81,6 @@ describe("HomePage bottom bar", () => {
     await userEvent.click(screen.getByRole("button", { name: "Generate" }));
     expect(api.triggerGenerate).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByText(/generating/i)).toBeInTheDocument());
-  });
-
-  test("clicking scout calls triggerScout and shows toast", async () => {
-    renderHomePage();
-    await screen.findByRole("button", { name: "Scout" });
-    await userEvent.click(screen.getByRole("button", { name: "Scout" }));
-    expect(api.triggerScout).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.getByText(/topics are being refreshed/i)).toBeInTheDocument());
   });
 
   test("generate button is disabled while active", async () => {

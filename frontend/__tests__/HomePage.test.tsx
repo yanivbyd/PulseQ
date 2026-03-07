@@ -81,45 +81,14 @@ describe("Generate button", () => {
   });
 });
 
-describe("Scout button", () => {
+describe("Topics nav link", () => {
   beforeEach(() => {
     vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
   });
 
-  test("button is in idle state on load", async () => {
+  test("shows a topics link in the bottom bar", async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Scout" })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Scout" })).not.toBeDisabled();
-  });
-
-  test("clicking button disables it and shows message on success", async () => {
-    vi.mocked(api.triggerScout).mockResolvedValue(undefined);
-    renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Scout" }));
-    await userEvent.click(screen.getByRole("button", { name: "Scout" }));
-    await waitFor(() => expect(screen.getByText("Topics are being refreshed.")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
-  });
-
-  test("shows error toast and keeps button disabled on failure", async () => {
-    vi.mocked(api.triggerScout).mockRejectedValue(new Error("Server error"));
-    renderPage();
-    await waitFor(() => screen.getByRole("button", { name: "Scout" }));
-    await userEvent.click(screen.getByRole("button", { name: "Scout" }));
-    await waitFor(() => expect(screen.getByText(/Something went wrong/)).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
-  });
-
-  test("button re-enables after 60 seconds", async () => {
-    vi.useFakeTimers();
-    vi.mocked(api.triggerScout).mockResolvedValue(undefined);
-    renderPage();
-    await act(async () => {}); // flush fetchArticleSummaries + React state
-    fireEvent.click(screen.getByRole("button", { name: "Scout" }));
-    await act(async () => {}); // flush triggerScout promise + state updates
-    expect(screen.getByRole("button", { name: "Scout" })).toBeDisabled();
-    act(() => { vi.advanceTimersByTime(60_000); });
-    expect(screen.getByRole("button", { name: "Scout" })).not.toBeDisabled();
-    vi.useRealTimers();
+    await waitFor(() => expect(screen.getByRole("link", { name: "Topics" })).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "Topics" })).toHaveAttribute("href", "/topics");
   });
 });

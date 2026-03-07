@@ -1,1 +1,28 @@
-{"topics": [{"title": "How Connection Pooling Works", "description": "Pool sizing math, queueing effects, saturation signals."}, {"title": "How Distributed Locks Work (and Fail)", "description": "Redis Redlock debate, lease-based locks, fencing tokens"}, {"title": "How Epoll Enables High-Performance Networking", "description": "Why select/poll don\u2019t scale and how epoll solves the problem"}, {"title": "How the Linux Kernel Handles System Calls", "description": "User \u2192 kernel transitions, syscall tables, context switching, and security checks.."}, {"title": "How Uber Matches Riders and Drivers in Real Time", "description": "Explain the core matching loop: location updates, candidate driver selection, dispatch algorithms, and latency constraints"}, {"title": "How Kafka Stores Messages", "description": "Detailed analysis of Kafka's log-based storage and message retention policies."}, {"title": "The Internals of Kubernetes Scheduling", "description": "Explaining the decision-making process and trade-offs in Kubernetes pod placement."}, {"title": "Per-CPU Data Structures: Sharding Kernel State for Efficiency", "description": "How Linux improves efficiency through data structure sharding across CPUs."}, {"title": "How the Linux Kernel Handles Interrupts", "description": "Exploring interrupt handling mechanisms in Linux for efficient hardware communication."}, {"title": "Bloom Filters in Production Systems", "description": "Using probabilistic data structures to optimize data queries and save space."}]}
+{
+    "topics": [
+        {
+            "title": "How Connection Pooling Works",
+            "description": "Pool sizing math, queueing effects, saturation signals."
+        },
+        {
+            "title": "How Epoll Enables High-Performance Networking",
+            "description": "Why select/poll don\u2019t scale and how epoll solves the problem"
+        },
+        {
+            "title": "How Kafka Stores Messages",
+            "description": "Detailed analysis of Kafka's log-based storage and message retention policies."
+        },
+        {
+            "title": "Why Distributed Systems Need Consensus Algorithms",
+            "description": "An exploration of Raft and Paxos and their role in ensuring consistency."
+        },
+        {
+            "title": "Vector Databases: The Next Generation of Data Stores",
+            "description": "Exploring how vector databases handle high-dimensional data for AI applications."
+        },
+        {
+            "title": "The Internals of Postgres Query Planning",
+            "description": "How Postgres optimizes and plans SQL queries for efficiency."
+        }
+    ]
+}

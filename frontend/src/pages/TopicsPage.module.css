@@ -11,46 +11,9 @@
 }
 
 .row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
   padding: 0.875rem 0;
   border-bottom: 1px solid var(--border);
-}
-
-.dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.title {
-  flex: 1;
   font-size: 0.95em;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.title:hover {
-  text-decoration: underline;
-}
-
-.markReadBtn {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  font-size: 1.1rem;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-}
-
-.markReadBtn:hover {
   color: var(--fg);
 }
 

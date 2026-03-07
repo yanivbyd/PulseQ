@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, triggerGenerate, triggerScout, postMarkRead, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, triggerGenerate, postMarkRead, type ArticleSummary } from "../api";
 import styles from "./HomePage.module.css";
 
 type ActionState = "idle" | "active" | "cooldown";
@@ -10,10 +10,8 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [generateState, setGenerateState] = useState<ActionState>("idle");
-  const [scoutState, setScoutState] = useState<ActionState>("idle");
   const [toast, setToast] = useState<string | null>(null);
   const generateCooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scoutCooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -35,7 +33,6 @@ export default function HomePage() {
   useEffect(() => {
     return () => {
       if (generateCooldown.current) clearTimeout(generateCooldown.current);
-      if (scoutCooldown.current) clearTimeout(scoutCooldown.current);
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, []);
@@ -57,19 +54,6 @@ export default function HomePage() {
     }
     setGenerateState("cooldown");
     generateCooldown.current = setTimeout(() => setGenerateState("idle"), 60_000);
-  }
-
-  async function handleScout() {
-    if (scoutState !== "idle") return;
-    setScoutState("active");
-    try {
-      await triggerScout();
-      showToast("Topics are being refreshed.");
-    } catch {
-      showToast("Something went wrong. Try again in a minute.");
-    }
-    setScoutState("cooldown");
-    scoutCooldown.current = setTimeout(() => setScoutState("idle"), 60_000);
   }
 
   async function handleMarkRead(article: ArticleSummary) {
@@ -109,18 +93,13 @@ export default function HomePage() {
       </ul>
       {toast && <div className={styles.toast}>{toast}</div>}
       <div className={styles.bottomBar}>
+        <a href="/topics" className={styles.barBtn} aria-label="Topics">&#128203;</a>
         <button
           className={styles.barBtn}
           aria-label="Generate"
           disabled={generateState !== "idle"}
           onClick={handleGenerate}
-        >✏️</button>
-        <button
-          className={styles.barBtn}
-          aria-label="Scout"
-          disabled={scoutState !== "idle"}
-          onClick={handleScout}
-        >📰</button>
+        >&#9999;&#65039;</button>
       </div>
     </main>
   );

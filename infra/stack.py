@@ -180,6 +180,8 @@ class WriterStack(Stack):
         web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
         web_fn.add_environment("SCOUT_FUNCTION_ARN", scout_fn.function_arn)
         web_fn.add_environment("EVENTS_BUCKET", events_bucket.bucket_name)
+        web_fn.add_environment("INPUT_BUCKET", input_bucket.bucket_name)
+        input_bucket.grant_read(web_fn)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
@@ -212,6 +214,11 @@ class WriterStack(Stack):
         web_api.add_routes(
             path="/api/scout",
             methods=[apigwv2.HttpMethod.POST],
+            integration=web_integration,
+        )
+        web_api.add_routes(
+            path="/api/topics",
+            methods=[apigwv2.HttpMethod.GET],
             integration=web_integration,
         )
 
