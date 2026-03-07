@@ -116,7 +116,7 @@ class WriterStack(Stack):
         secret.grant_read(writer_fn)
         ifttt_secret.grant_read(writer_fn)
         articles_table.grant(writer_fn, "dynamodb:PutItem")
-        topics_table.grant_read_data(writer_fn)
+        topics_table.grant_read_write_data(writer_fn)
 
         # ── API Gateway HTTP API (writer) ────────────────────────────────────
         http_api = apigwv2.HttpApi(self, "WriterApi")

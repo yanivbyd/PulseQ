@@ -107,7 +107,7 @@ class TestLambdaHandler:
     def test_happy_path(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _, articles_table = _make_ddb_resource()
+        ddb, topics_table, articles_table = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -131,6 +131,14 @@ class TestLambdaHandler:
         assert mock_urlopen.call_count == 2
         warmup_url = mock_urlopen.call_args_list[0].args[0]
         assert warmup_url == "https://test-web.execute-api.eu-west-1.amazonaws.com/api/article/abc12"
+
+        # chosen topic is removed after successful put_item
+        topics_table.update_item.assert_called_once_with(
+            Key={"userId": "user1"},
+            UpdateExpression="SET topics = :topics",
+            ConditionExpression="topics = :orig",
+            ExpressionAttributeValues={":topics": [], ":orig": SAMPLE_TOPICS},
+        )
 
     @patch.dict(os.environ, ENV)
     @patch("writer.lambda_handler.urllib.request.urlopen")
@@ -319,7 +327,7 @@ class TestLambdaHandler:
     def test_writer_run_failure(self, mock_run, mock_boto_client, mock_boto_resource):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, _, _ = _make_ddb_resource()
+        ddb, topics_table, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
         mock_boto_resource.return_value = ddb
 
@@ -328,3 +336,25 @@ class TestLambdaHandler:
 
         assert result["statusCode"] == 500
         assert "writer.run() failed" in json.loads(result["body"])["error"]
+        topics_table.update_item.assert_not_called()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.lambda_handler.urllib.request.urlopen")
+    @patch("writer.lambda_handler.boto3.resource")
+    @patch("writer.lambda_handler.boto3.client")
+    @patch("writer.lambda_handler.run", side_effect=_fake_run)
+    def test_topic_consume_fail_open(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
+        """update_item failure is non-fatal: logger.warning called, handler still returns 200."""
+        sm = _make_sm_client()
+        s3 = _make_s3_client()
+        ddb, topics_table, _ = _make_ddb_resource()
+        topics_table.update_item.side_effect = Exception("ConditionalCheckFailedException")
+        mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3
+        mock_boto_resource.return_value = ddb
+
+        with patch("writer.lambda_handler.logger.warning") as warn_spy:
+            from writer.lambda_handler import handler
+            result = handler({"userId": "user1"}, None)
+
+        assert result["statusCode"] == 200
+        warn_spy.assert_called_once()

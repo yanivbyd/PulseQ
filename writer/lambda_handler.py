@@ -41,7 +41,9 @@ def _get_ifttt_key() -> str:
     return _ifttt_key
 
 
-def _load_inputs(s3_client, bucket: str, topics_table, tmp_inputs: Path, user_id: str) -> str:
+def _load_inputs(
+    s3_client, bucket: str, topics_table, tmp_inputs: Path, user_id: str
+) -> tuple[str, dict, list]:
     s3_client.download_file(bucket, "shared/instructions.md", str(tmp_inputs / "instructions.md"))
 
     resp = topics_table.get_item(Key={"userId": user_id})
@@ -49,7 +51,7 @@ def _load_inputs(s3_client, bucket: str, topics_table, tmp_inputs: Path, user_id
     if not topics:
         raise ValueError("no topics found for user")
     chosen = random.choice(topics)
-    return f"{chosen['title']} — {chosen['description']}"
+    return f"{chosen['title']} — {chosen['description']}", chosen, topics
 
 
 def _warm_up(url: str) -> None:
@@ -93,7 +95,7 @@ def handler(event, context):
         tmp_inputs.mkdir()
 
         try:
-            topic = _load_inputs(s3, input_bucket, topics_table, tmp_inputs, user_id)
+            topic, chosen, topics = _load_inputs(s3, input_bucket, topics_table, tmp_inputs, user_id)
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": f"Failed to download inputs: {e}"})}
 
@@ -116,6 +118,17 @@ def handler(event, context):
         })
     except Exception as e:
         return {"statusCode": 500, "body": json.dumps({"error": f"Failed to save article: {e}"})}
+
+    remaining = [t for t in topics if t["title"] != chosen["title"]]
+    try:
+        topics_table.update_item(
+            Key={"userId": user_id},
+            UpdateExpression="SET topics = :topics",
+            ConditionExpression="topics = :orig",
+            ExpressionAttributeValues={":topics": remaining, ":orig": topics},
+        )
+    except Exception as e:
+        logger.warning("writer: failed to remove consumed topic from DDB; topic may be reused: %s", e)
 
     article_url = f"{os.environ['WEB_BASE_URL']}/{article['id']}"
     warmup_url = f"{os.environ['WEB_BASE_URL']}/api/article/{article['id']}"
