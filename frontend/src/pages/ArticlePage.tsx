@@ -9,7 +9,9 @@ export default function ArticlePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reaction, setReaction] = useState<"like" | "dislike" | null>(null);
-  const [feedbackError, setFeedbackError] = useState(false);
+  const [reactionError, setReactionError] = useState(false);
+  const [freeText, setFreeText] = useState("");
+  const [freeTextError, setFreeTextError] = useState(false);
 
   useEffect(() => {
     if (!articleId) return;
@@ -19,16 +21,34 @@ export default function ArticlePage() {
       .finally(() => setLoading(false));
   }, [articleId]);
 
-  async function handleFeedback(picked: "like" | "dislike") {
-    if (picked === reaction || !articleId || !article) return;
-    const clientTimestamp = new Date().toISOString().replace(/:/g, "-");
+  function makeMeta(article: Article) {
+    return {
+      articleId: article.id,
+      articleTitle: article.title,
+      clientTimestamp: new Date().toISOString().replace(/:/g, "-"),
+    };
+  }
+
+  async function handleReactionFeedback(picked: "like" | "dislike") {
+    if (picked === reaction || !article) return;
     setReaction(picked);
-    setFeedbackError(false);
+    setReactionError(false);
     try {
-      await postFeedback(articleId, article.title, picked, clientTimestamp);
+      await postFeedback(makeMeta(article), { type: "reaction", reaction: picked });
     } catch {
       setReaction(null);
-      setFeedbackError(true);
+      setReactionError(true);
+    }
+  }
+
+  async function handleFreeTextSubmit() {
+    if (!freeText || !article) return;
+    setFreeTextError(false);
+    try {
+      await postFeedback(makeMeta(article), { type: "freeText", text: freeText });
+      setFreeText("");
+    } catch {
+      setFreeTextError(true);
     }
   }
 
@@ -45,22 +65,45 @@ export default function ArticlePage() {
         className={styles.wrapper}
         dangerouslySetInnerHTML={{ __html: article.html }}
       />
-      <hr className={styles.divider} />
       <div className={styles.feedback}>
-        <p className={styles.feedbackLabel}>Did you enjoy this article?</p>
-        <div className={styles.feedbackButtons}>
-          <button
-            className={`${styles.feedbackBtn} ${reaction === "like" ? styles.selected : ""}`}
-            onClick={() => handleFeedback("like")}
-            aria-label="Like"
-          >👍</button>
-          <button
-            className={`${styles.feedbackBtn} ${reaction === "dislike" ? styles.selected : ""}`}
-            onClick={() => handleFeedback("dislike")}
-            aria-label="Dislike"
-          >👎</button>
+        <div className={styles.feedbackCard}>
+          <p className={styles.feedbackTitle}>Feedback</p>
+          <div className={styles.reactionRow}>
+            <span className={styles.reactionLabel}>Did you enjoy this article?</span>
+            <div className={styles.feedbackButtons}>
+              <button
+                className={`${styles.feedbackBtn} ${reaction === "like" ? styles.selected : ""}`}
+                onClick={() => handleReactionFeedback("like")}
+                aria-label="Like"
+              >👍</button>
+              <button
+                className={`${styles.feedbackBtn} ${reaction === "dislike" ? styles.selected : ""}`}
+                onClick={() => handleReactionFeedback("dislike")}
+                aria-label="Dislike"
+              >👎</button>
+            </div>
+          </div>
+          {reactionError && <span className={styles.feedbackErr}>Something went wrong. Try again.</span>}
+          <hr className={styles.feedbackDivider} />
+          <div className={styles.freeTextSection}>
+            <label htmlFor="freeTextInput" className={styles.freeTextLabel}>Anything to add?</label>
+            <textarea
+              id="freeTextInput"
+              className={styles.freeTextInput}
+              value={freeText}
+              onChange={(e) => setFreeText(e.target.value)}
+              rows={3}
+            />
+            <div className={styles.freeTextActions}>
+              <button
+                className={styles.submitBtn}
+                onClick={handleFreeTextSubmit}
+                disabled={!freeText}
+              >Submit</button>
+            </div>
+          </div>
+          {freeTextError && <span className={styles.feedbackErr}>Something went wrong. Try again.</span>}
         </div>
-        {feedbackError && <span className={styles.feedbackErr}>Something went wrong. Try again.</span>}
       </div>
     </>
   );

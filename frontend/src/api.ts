@@ -65,17 +65,22 @@ export async function postMarkRead(
   if (!res.ok) throw new Error(`Failed to mark read: ${res.status}`);
 }
 
-export async function postFeedback(
-  articleId: string,
-  articleTitle: string,
-  reaction: "like" | "dislike",
-  clientTimestamp: string,
-): Promise<void> {
+export interface FeedbackMeta {
+  articleId: string;
+  articleTitle: string;
+  clientTimestamp: string;
+}
+
+export type FeedbackContent =
+  | { type: "reaction"; reaction: "like" | "dislike" }
+  | { type: "freeText"; text: string };
+
+export async function postFeedback(meta: FeedbackMeta, content: FeedbackContent): Promise<void> {
   const userId = import.meta.env.VITE_USER_ID as string;
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ articleId, articleTitle, userId, reaction, clientTimestamp }),
+    body: JSON.stringify({ ...meta, userId, content }),
   });
   if (!res.ok) throw new Error(`Failed to post feedback: ${res.status}`);
 }

@@ -425,7 +425,7 @@ describe("POST /api/feedback", () => {
       articleId: "abc12",
       articleTitle: "How Load Balancers Work",
       userId: "user1",
-      reaction: "like",
+      content: { type: "reaction", reaction: "like" },
       clientTimestamp: validTimestamp(),
       ...overrides,
     });
@@ -439,35 +439,83 @@ describe("POST /api/feedback", () => {
   });
   afterEach(() => { warnSpy.mockRestore(); });
 
-  test("writes S3 object and returns 200 for valid like", async () => {
+  test("reaction event: writes correct S3 key and envelope, returns 200", async () => {
     const s3 = makeMockS3();
     const ts = validTimestamp();
     const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
-      makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", reaction: "like", clientTimestamp: ts })),
+      makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
+        articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
+        content: { type: "reaction", reaction: "like" }, clientTimestamp: ts,
+      })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     const cmd = (s3.send as jest.Mock).mock.calls[0][0] as PutObjectCommand;
     expect(cmd.input.Bucket).toBe(BUCKET);
-    expect(cmd.input.Key).toBe(`user1/${ts}_article_abc12_general_feedback.json`);
+    expect(cmd.input.Key).toBe(`user1/${ts}_article_abc12_feedback.json`);
     expect(cmd.input.ContentType).toBe("application/json");
-    expect(JSON.parse(cmd.input.Body as string)).toMatchObject({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", reaction: "like", clientTimestamp: ts });
+    const written = JSON.parse(cmd.input.Body as string);
+    expect(written).toMatchObject({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", clientTimestamp: ts });
+    expect(written.content).toEqual({ type: "reaction", reaction: "like" });
+  });
+
+  test("freeText event: writes correct S3 envelope, returns 200", async () => {
+    const s3 = makeMockS3();
+    const ts = validTimestamp();
+    const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
+      makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
+        articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
+        content: { type: "freeText", text: "Great explanation of CRDTs" }, clientTimestamp: ts,
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(200);
+    const cmd = (s3.send as jest.Mock).mock.calls[0][0] as PutObjectCommand;
+    const written = JSON.parse(cmd.input.Body as string);
+    expect(written.content).toEqual({ type: "freeText", text: "Great explanation of CRDTs" });
   });
 
   test("accepts dislike reaction", async () => {
     const s3 = makeMockS3();
     const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
-      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ reaction: "dislike" })),
+      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "reaction", reaction: "dislike" } })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
   });
 
-  test("returns 400 for invalid reaction", async () => {
+  test("returns 400 for missing/null content", async () => {
     const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
-      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ reaction: "meh" })),
+      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: null })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
-    expect(JSON.parse(result.body as string).error).toMatch(/reaction/);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("meh"));
+    expect(JSON.parse(result.body as string).error).toMatch(/content/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("content"));
+  });
+
+  test("returns 400 for unknown content.type", async () => {
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "unknown" } })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/content\.type/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("content.type"));
+  });
+
+  test("returns 400 for invalid reaction value", async () => {
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "reaction", reaction: "meh" } })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/content\.reaction/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("content.reaction"));
+  });
+
+  test("returns 400 when content.text exceeds 5000 characters", async () => {
+    const longText = "a".repeat(5001);
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+      makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "freeText", text: longText } })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/5000/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("content.text"));
   });
 
   test("returns 400 for missing articleId", async () => {
@@ -519,18 +567,20 @@ describe("POST /api/feedback", () => {
     errorSpy.mockRestore();
   });
 
-  test("marks article as read in DynamoDB after S3 write", async () => {
+  test("marks article as read for both reaction and freeText events", async () => {
     const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
-    const ddb = makeMockDdb(MOCK_DB);
-    const result = await createHandler(ddb, mockLambda, makeMockS3())(
-      makeGatewayEvent("/api/feedback", undefined, "POST", validBody()),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(200);
-    const calls = (ddb.send as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
-    const updateCall = calls.find((c: unknown) => c instanceof UpdateCommand) as UpdateCommand | undefined;
-    expect(updateCall).toBeDefined();
-    expect(updateCall!.input.Key).toMatchObject({ userid: "user1", creation_timestamp: SAMPLE_ARTICLE.creation_timestamp });
-    expect(updateCall!.input.UpdateExpression).toBe("SET is_read = :true");
+    for (const content of [{ type: "reaction", reaction: "like" }, { type: "freeText", text: "nice" }]) {
+      const ddb = makeMockDdb(MOCK_DB);
+      const result = await createHandler(ddb, mockLambda, makeMockS3())(
+        makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content })),
+      ) as APIGatewayProxyStructuredResultV2;
+      expect(result.statusCode).toBe(200);
+      const calls = (ddb.send as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
+      const updateCall = calls.find((c: unknown) => c instanceof UpdateCommand) as UpdateCommand | undefined;
+      expect(updateCall).toBeDefined();
+      expect(updateCall!.input.Key).toMatchObject({ userid: "user1", creation_timestamp: SAMPLE_ARTICLE.creation_timestamp });
+      expect(updateCall!.input.UpdateExpression).toBe("SET is_read = :true");
+    }
     expect(infoSpy).toHaveBeenCalled();
     infoSpy.mockRestore();
   });

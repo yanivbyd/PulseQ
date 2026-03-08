@@ -208,7 +208,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(400, { error: "Invalid JSON body" });
     }
 
-    const { articleId, userId, reaction, clientTimestamp, articleTitle } = parsed as Record<string, unknown>;
+    const { articleId, userId, content, clientTimestamp, articleTitle } = parsed as Record<string, unknown>;
     if (!articleId || typeof articleId !== "string") {
       console.warn(`feedback: invalid articleId: ${JSON.stringify(articleId)}`);
       return jsonResponse(400, { error: "articleId is required" });
@@ -221,13 +221,26 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       console.warn(`feedback: invalid articleTitle: ${JSON.stringify(articleTitle)}`);
       return jsonResponse(400, { error: "articleTitle is required" });
     }
-    if (reaction !== "like" && reaction !== "dislike") {
-      console.warn(`feedback: invalid reaction: ${JSON.stringify(reaction)}`);
-      return jsonResponse(400, { error: "reaction must be like or dislike" });
-    }
     if (!clientTimestamp || typeof clientTimestamp !== "string") {
       console.warn(`feedback: invalid clientTimestamp: ${JSON.stringify(clientTimestamp)}`);
       return jsonResponse(400, { error: "clientTimestamp is required" });
+    }
+    if (!content || typeof content !== "object" || Array.isArray(content)) {
+      console.warn(`feedback: invalid content: ${JSON.stringify(content)}`);
+      return jsonResponse(400, { error: "content must be an object" });
+    }
+    const contentObj = content as Record<string, unknown>;
+    if (contentObj.type !== "reaction" && contentObj.type !== "freeText") {
+      console.warn(`feedback: invalid content.type: ${JSON.stringify(contentObj.type)}`);
+      return jsonResponse(400, { error: "content.type must be reaction or freeText" });
+    }
+    if (contentObj.type === "reaction" && contentObj.reaction !== "like" && contentObj.reaction !== "dislike") {
+      console.warn(`feedback: invalid content.reaction: ${JSON.stringify(contentObj.reaction)}`);
+      return jsonResponse(400, { error: "content.reaction must be like or dislike" });
+    }
+    if (contentObj.type === "freeText" && (typeof contentObj.text !== "string" || contentObj.text.length > 5000)) {
+      console.warn(`feedback: invalid content.text: ${JSON.stringify(contentObj.text)}`);
+      return jsonResponse(400, { error: "content.text must be a string with length <= 5000" });
     }
 
     // Sanitised format: YYYY-MM-DDTHH-MM-SS.mmmZ — restore colons in the time part to parse as ISO 8601
@@ -247,12 +260,12 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(400, { error: "clientTimestamp is too far from server time" });
     }
 
-    const key = `${userId}/${clientTimestamp}_article_${articleId}_general_feedback.json`;
+    const key = `${userId}/${clientTimestamp}_article_${articleId}_feedback.json`;
     try {
       await s3Client.send(new PutObjectCommand({
         Bucket: bucket,
         Key: key,
-        Body: JSON.stringify({ articleId, articleTitle, userId, reaction, clientTimestamp }),
+        Body: JSON.stringify({ articleId, articleTitle, userId, clientTimestamp, content }),
         ContentType: "application/json",
       }));
     } catch (err) {
@@ -280,7 +293,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       }
     }
 
-    // Best-effort: mark article as read after feedback
+    // Best-effort: mark article as read after any feedback
     try {
       await markArticleRead(articleId);
     } catch (err) {
