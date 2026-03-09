@@ -278,6 +278,48 @@ class WriterStack(Stack):
         CfnOutput(self, "FrontendUrl", value=f"https://{frontend_distribution.domain_name}")
         CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)
 
+        # ── MCP Server Lambda ────────────────────────────────────────────────
+        mcp_fn = _lambda.Function(
+            self,
+            "McpServerFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            architecture=_lambda.Architecture.ARM_64,
+            handler="lambda_handler.handler",
+            code=_lambda.Code.from_asset(
+                "../mcp_server",
+                bundling=BundlingOptions(
+                    image=_lambda.Runtime.PYTHON_3_12.bundling_image,
+                    command=[
+                        "bash",
+                        "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
+                    ],
+                ),
+            ),
+            timeout=Duration.seconds(30),
+            environment={
+                "WRITER_LAMBDA_NAME": writer_fn.function_name,
+                "USER_ID": "user1",
+            },
+        )
+
+        writer_fn.grant_invoke(mcp_fn)
+
+        mcp_api = apigwv2.HttpApi(self, "McpHttpApi")
+        mcp_api.add_routes(
+            path="/{proxy+}",
+            methods=[apigwv2.HttpMethod.ANY],
+            integration=integrations.HttpLambdaIntegration("McpIntegration", mcp_fn),
+        )
+
+        # Apply throttling to the auto-created $default stage via L1 escape hatch
+        mcp_api.default_stage.node.default_child.add_override(
+            "Properties.DefaultRouteSettings",
+            {"ThrottlingRateLimit": 5, "ThrottlingBurstLimit": 10},
+        )
+
+        CfnOutput(self, "McpEndpointUrl", value=mcp_api.url or "")
+
         # ── Daily scheduler: invoke Scout Lambda at 07:30 Asia/Jerusalem ─────
         scout_scheduler_role = iam.Role(
             self,

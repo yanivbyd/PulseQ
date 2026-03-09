@@ -116,6 +116,32 @@ Upload input files to S3:
 bash s3/upload.sh
 ```
 
+## MCP Server
+
+PulseQ exposes an [MCP](https://modelcontextprotocol.io/) endpoint so AI assistants (Claude, ChatGPT, Gemini) can generate articles on demand.
+
+**Endpoint:** `<McpApiUrl output from cdk deploy>` *(filled in after first deploy)*
+
+### Tool: `generate_article`
+
+Picks a random topic from your PulseQ pool, generates an article, and sends a push notification when it's ready. No arguments needed.
+
+### Setup instructions
+
+**Claude (claude.ai)**
+1. Settings → Integrations → Add integration
+2. Paste the MCP endpoint URL
+
+**ChatGPT**
+1. Settings → Connectors → Add
+2. Paste the MCP endpoint URL
+
+**Gemini**
+1. Extensions → Add MCP server
+2. Paste the MCP endpoint URL
+
+---
+
 ## Running Tests
 
 ```bash
