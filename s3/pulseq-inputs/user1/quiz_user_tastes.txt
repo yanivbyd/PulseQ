@@ -1,0 +1,1 @@
+Focus on practical, real-world implications of the technology described. Prefer questions that test understanding of trade-offs or design decisions rather than pure factual recall.

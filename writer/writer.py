@@ -1,9 +1,9 @@
+import json
 import logging
 import os
 import random
 import re
 import string
-from pathlib import Path
 
 import openai
 
@@ -13,12 +13,6 @@ logger = logging.getLogger(__name__)
 def generate_short_id(length: int = 5) -> str:
     chars = string.ascii_lowercase + string.digits
     return "".join(random.choices(chars, k=length))
-
-
-def _read_file(path: Path) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"required file not found: {path}")
-    return path.read_text(encoding="utf-8")
 
 
 def strip_markdown_fences(text: str) -> str:
@@ -40,26 +34,64 @@ def _extract_accent(html: str) -> str:
     return match.group(1) if match else "#5b5ef4"
 
 
-def run(base_dir: Path, topic: str) -> dict:
+def _validate_quiz(quiz: list) -> None:
+    if not isinstance(quiz, list) or not (1 <= len(quiz) <= 2):
+        raise ValueError("quiz must be a list of 1-2 items")
+    for item in quiz:
+        if not isinstance(item.get("q"), str) or not item["q"]:
+            raise ValueError("quiz item missing non-empty 'q'")
+        options = item.get("options", [])
+        answer = item.get("answer")
+        if not isinstance(answer, int) or not (0 <= answer < len(options)):
+            raise ValueError("quiz item 'answer' must be a valid option index")
+
+
+def _shuffle_options(quiz: list) -> list:
+    for item in quiz:
+        correct = item["options"][item["answer"]]
+        random.shuffle(item["options"])
+        item["answer"] = item["options"].index(correct)
+    return quiz
+
+
+def generate_quiz(client, html: str, quiz_prompt: str) -> list:
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": quiz_prompt},
+                {"role": "user",   "content": html},
+            ],
+        )
+        raw = response.choices[0].message.content
+        quiz = json.loads(raw)
+        _validate_quiz(quiz)
+        return _shuffle_options(quiz)
+    except Exception as e:
+        logger.warning("quiz generation failed: %s", e)
+        return []
+
+
+def run(topic: str, article_instructions: str, quiz_prompt: str) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
-
-    instructions = _read_file(base_dir / "inputs" / "instructions.md")
 
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": instructions},
+            {"role": "system", "content": article_instructions},
             {"role": "user",   "content": f"--- TOPIC ---\n{topic}"},
         ],
     )
 
     html = strip_markdown_fences(response.choices[0].message.content)
+    quiz = generate_quiz(client, html, quiz_prompt)
     return {
         "id": generate_short_id(),
         "html": html,
         "title": _extract_title(html),
         "accent": _extract_accent(html),
+        "quiz": quiz,
     }

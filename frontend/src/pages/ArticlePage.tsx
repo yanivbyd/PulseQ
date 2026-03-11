@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { fetchArticle, postFeedback, type Article } from "../api";
+import QuizSection from "../components/QuizSection";
 import styles from "./ArticlePage.module.css";
 
 export default function ArticlePage() {
@@ -65,6 +66,7 @@ export default function ArticlePage() {
         className={styles.wrapper}
         dangerouslySetInnerHTML={{ __html: article.html }}
       />
+      <QuizSection quiz={article.quiz} />
       <div className={styles.feedback}>
         <div className={styles.feedbackCard}>
           <p className={styles.feedbackTitle}>Feedback</p>

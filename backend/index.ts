@@ -112,7 +112,17 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
     }
 
     const item = result.Items[0];
-    return jsonResponse(200, { id: item.id, title: item.title, accent: item.accent, html: item.html });
+    let quiz: unknown[] = [];
+    if (typeof item.quiz === "string") {
+      try {
+        const parsed = JSON.parse(item.quiz);
+        if (Array.isArray(parsed)) quiz = parsed;
+        else console.warn(`article: quiz field is not an array for id=${articleId}`);
+      } catch {
+        console.warn(`article: invalid quiz JSON for id=${articleId}`);
+      }
+    }
+    return jsonResponse(200, { id: item.id, title: item.title, accent: item.accent, html: item.html, quiz });
   }
 
   async function handleMarkRead(body: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {

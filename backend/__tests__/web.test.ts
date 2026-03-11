@@ -74,6 +74,8 @@ function makeMockLambda(shouldFail = false) {
   return { send } as unknown as LambdaClient;
 }
 
+const SAMPLE_QUIZ = [{ q: "What is a load balancer?", options: ["A proxy", "A router", "A switch"], answer: 0 }];
+
 const SAMPLE_ARTICLE = {
   id: "abc12",
   title: "How Load Balancers Work",
@@ -81,6 +83,7 @@ const SAMPLE_ARTICLE = {
   creation_timestamp: "2026-03-03T14:00:00.000Z",
   userid: "user1",
   html: '<div class="header-card"><h1>How Load Balancers Work</h1></div>',
+  quiz: JSON.stringify(SAMPLE_QUIZ),
 };
 
 const SAMPLE_ARTICLE_2 = {
@@ -231,7 +234,7 @@ describe("GET /api/article-summaries", () => {
 describe("GET /api/article/:articleId", () => {
   beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
 
-  test("returns full article JSON", async () => {
+  test("returns full article JSON including parsed quiz array", async () => {
     const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
       makeGatewayEvent("/api/article/abc12"),
     ) as APIGatewayProxyStructuredResultV2;
@@ -241,7 +244,32 @@ describe("GET /api/article/:articleId", () => {
     expect(body.id).toBe("abc12");
     expect(body.title).toBe("How Load Balancers Work");
     expect(body.html).toBe(SAMPLE_ARTICLE.html);
+    expect(body.quiz).toEqual(SAMPLE_QUIZ);
     expect(body.userid).toBeUndefined(); // internal field not exposed
+  });
+
+  test("returns quiz: [] when DDB quiz field is absent", async () => {
+    const articleWithoutQuiz = { ...SAMPLE_ARTICLE } as Record<string, unknown>;
+    delete articleWithoutQuiz.quiz;
+    const db = { user1: [articleWithoutQuiz] };
+    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3)(
+      makeGatewayEvent("/api/article/abc12"),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body as string).quiz).toEqual([]);
+  });
+
+  test("returns quiz: [] and warns when DDB quiz field contains invalid JSON", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const articleBadQuiz = { ...SAMPLE_ARTICLE, quiz: "not valid json" };
+    const db = { user1: [articleBadQuiz] };
+    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3)(
+      makeGatewayEvent("/api/article/abc12"),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body as string).quiz).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("invalid quiz JSON"));
+    warnSpy.mockRestore();
   });
 
   test("queries ById GSI with the articleId", async () => {

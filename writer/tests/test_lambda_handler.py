@@ -1,6 +1,5 @@
 import json
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,6 +25,8 @@ SECRETS = {
 
 SAMPLE_TOPICS = [{"title": "N+1 Queries", "description": "Detection patterns."}]
 
+SAMPLE_QUIZ = [{"q": "What is a load balancer?", "options": ["A proxy", "A router", "A switch"], "answer": 0}]
+
 SAMPLE_ARTICLE = {
     "id": "abc12",
     "html": (
@@ -35,6 +36,7 @@ SAMPLE_ARTICLE = {
     ),
     "title": "How Load Balancers Work",
     "accent": "#0d9488",
+    "quiz": SAMPLE_QUIZ,
 }
 
 
@@ -50,13 +52,21 @@ def _make_sm_client():
 
 
 def _make_s3_client():
-    """Return a mock S3 client that writes instructions.md to the dest path."""
-    def _download_file(bucket, key, dest):
-        if key == "shared/instructions.md":
-            Path(dest).write_text("# Instructions")
+    """Return a mock S3 client for the inputs bucket."""
+    def _get_object(Bucket, Key):
+        content = {
+            "shared/article_generation_instructions.txt": b"# Article Instructions",
+            "shared/quiz_generation_instructions.txt": b"# Quiz Instructions",
+            "user1/quiz_user_tastes.txt": b"",
+        }.get(Key)
+        if content is None:
+            raise Exception(f"unexpected key: {Key}")
+        body = MagicMock()
+        body.read.return_value = content
+        return {"Body": body}
 
     s3 = MagicMock()
-    s3.download_file.side_effect = _download_file
+    s3.get_object.side_effect = _get_object
     return s3
 
 
@@ -85,7 +95,7 @@ def _make_ddb_resource(topics_table=None, articles_table=None):
     return ddb, tt, at
 
 
-def _fake_run(base_dir, topic):
+def _fake_run(topic, article_instructions, quiz_prompt):
     return SAMPLE_ARTICLE.copy()
 
 
@@ -125,12 +135,12 @@ class TestLambdaHandler:
         assert item["title"] == "How Load Balancers Work"
         assert item["accent"] == "#0d9488"
         assert item["html"] == SAMPLE_ARTICLE["html"]
+        assert item["quiz"] == json.dumps(SAMPLE_QUIZ)
         assert isinstance(item["creation_timestamp"], str)
 
         # warm-up calls the article API endpoint, notification uses the React app URL
         assert mock_urlopen.call_count == 2
-        warmup_url = mock_urlopen.call_args_list[0].args[0]
-        assert warmup_url == "https://test-web.execute-api.eu-west-1.amazonaws.com/api/article/abc12"
+        assert mock_urlopen.call_args_list[0].args[0] == "https://test-web.execute-api.eu-west-1.amazonaws.com/api/article/abc12"
 
         # chosen topic is removed after successful put_item
         topics_table.update_item.assert_called_once_with(
@@ -145,8 +155,8 @@ class TestLambdaHandler:
     @patch("writer.lambda_handler.boto3.resource")
     @patch("writer.lambda_handler.boto3.client")
     @patch("writer.lambda_handler.run", side_effect=_fake_run)
-    def test_run_receives_topic(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
-        """Lambda picks a topic from DDB and passes it to run()."""
+    def test_run_receives_topic_and_instructions(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
+        """Lambda picks a topic from DDB and passes it with instructions to run()."""
         sm = _make_sm_client()
         s3 = _make_s3_client()
         ddb, _, _ = _make_ddb_resource()
@@ -158,6 +168,8 @@ class TestLambdaHandler:
 
         _, kwargs = mock_run.call_args
         assert kwargs["topic"] == "N+1 Queries — Detection patterns."
+        assert "Article Instructions" in kwargs["article_instructions"]
+        assert "Quiz Instructions" in kwargs["quiz_prompt"]
         assert "history" not in kwargs
 
     @patch.dict(os.environ, ENV)
@@ -240,9 +252,9 @@ class TestLambdaHandler:
     def test_s3_download_failure(self, mock_run, mock_boto_client, mock_boto_resource, mock_urlopen):
         from botocore.exceptions import ClientError
         sm = _make_sm_client()
-        s3 = _make_s3_client()
-        s3.download_file.side_effect = ClientError(
-            {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "download_file"
+        s3 = MagicMock()
+        s3.get_object.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "get_object"
         )
         ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = lambda svc, **kw: sm if svc == "secretsmanager" else s3

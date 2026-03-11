@@ -1,0 +1,96 @@
+.container {
+  max-width: 680px;
+  margin: 1.5rem auto 0;
+  padding: 0 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.questionText {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--fg);
+  line-height: 1.45;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.option:hover {
+  border-color: var(--accent);
+  background: var(--card);
+}
+
+.correct {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.correct:hover {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.wrong {
+  border-color: #dc2626;
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+
+.wrong:hover {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.indicator {
+  font-weight: 700;
+  margin-left: 0.6rem;
+  flex-shrink: 0;
+}

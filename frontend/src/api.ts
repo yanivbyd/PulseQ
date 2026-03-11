@@ -15,8 +15,15 @@ export interface ArticleSummary {
   is_read?: boolean;
 }
 
+export interface QuizQuestion {
+  q: string;
+  options: string[];
+  answer: number;
+}
+
 export interface Article extends ArticleSummary {
   html: string;
+  quiz: QuizQuestion[];
 }
 
 export async function fetchArticleSummaries(userId: string): Promise<ArticleSummary[]> {
