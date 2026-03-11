@@ -32,9 +32,10 @@ afterEach(() => {
 });
 
 describe("TopicsPage topic list", () => {
-  test("renders topic titles", async () => {
+  test("renders page title and topics", async () => {
     renderTopicsPage();
-    expect(await screen.findByText("AI News")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Topics" })).toBeInTheDocument();
+    expect(screen.getByText("AI News")).toBeInTheDocument();
     expect(screen.getByText("Cloud Computing")).toBeInTheDocument();
   });
 

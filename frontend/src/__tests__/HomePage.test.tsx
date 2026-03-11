@@ -30,9 +30,10 @@ beforeEach(() => {
 });
 
 describe("HomePage article list", () => {
-  test("renders unread articles as rows with title and mark-read button", async () => {
+  test("renders page title and articles", async () => {
     renderHomePage();
-    expect(await screen.findByText("Article One")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Articles" })).toBeInTheDocument();
+    expect(screen.getByText("Article One")).toBeInTheDocument();
     expect(screen.getByText("Article Two")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Mark as read" })).toHaveLength(2);
   });

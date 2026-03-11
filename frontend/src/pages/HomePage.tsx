@@ -75,6 +75,7 @@ export default function HomePage() {
 
   return (
     <main className={styles.container}>
+      <h1 className={styles.pageTitle}>Articles</h1>
       <ul className={styles.list}>
         {articles.length === 0
           ? <li className={styles.empty}>Nothing new to read.</li>

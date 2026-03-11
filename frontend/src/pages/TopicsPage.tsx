@@ -88,6 +88,7 @@ export default function TopicsPage() {
 
   return (
     <main className={styles.container}>
+      <h1 className={styles.pageTitle}>Topics</h1>
       <ul className={styles.list}>
         {topics.length === 0
           ? <li className={styles.empty}>No topics configured.</li>
