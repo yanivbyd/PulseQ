@@ -4,10 +4,21 @@
   padding: 1.5rem 1rem calc(56px + env(safe-area-inset-bottom, 0px) + 1rem);
 }
 
-.pageTitle {
+.pageHeader {
   margin: -1.5rem -1rem 1.5rem;
-  padding: 1.1rem 1rem;
+  padding: 0 0.75rem;
   background: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.headerSpacer {
+  width: 2rem;
+}
+
+.pageTitle {
+  flex: 1;
+  padding: 1.1rem 0;
   color: #fff;
   text-align: center;
   font-size: 0.8rem;

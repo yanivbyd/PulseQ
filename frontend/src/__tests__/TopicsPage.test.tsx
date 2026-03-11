@@ -59,17 +59,11 @@ describe("TopicsPage topic list", () => {
 });
 
 describe("TopicsPage bottom bar", () => {
-  test("renders home link and refresh button", async () => {
+  test("renders refresh button and hamburger toggle", async () => {
     renderTopicsPage();
     await screen.findByText("AI News");
-    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh Topics" })).toBeInTheDocument();
-  });
-
-  test("home link points to /", async () => {
-    renderTopicsPage();
-    const link = await screen.findByRole("link", { name: "Home" });
-    expect(link).toHaveAttribute("href", "/");
+    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
   });
 });
 

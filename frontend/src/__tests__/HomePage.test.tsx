@@ -44,16 +44,10 @@ describe("HomePage article list", () => {
 });
 
 describe("HomePage bottom bar", () => {
-  test("renders generate button and topics link", async () => {
+  test("renders generate button and hamburger toggle", async () => {
     renderHomePage();
     expect(await screen.findByRole("button", { name: "Generate" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Topics" })).toBeInTheDocument();
-  });
-
-  test("topics link points to /topics", async () => {
-    renderHomePage();
-    const link = await screen.findByRole("link", { name: "Topics" });
-    expect(link).toHaveAttribute("href", "/topics");
+    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
   });
 
   test("clicking generate calls triggerGenerate and shows toast", async () => {

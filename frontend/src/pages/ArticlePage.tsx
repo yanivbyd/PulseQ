@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { fetchArticle, postFeedback, type Article } from "../api";
+import HamburgerMenu from "../components/HamburgerMenu";
 import QuizSection from "../components/QuizSection";
 import styles from "./ArticlePage.module.css";
 
@@ -59,8 +60,8 @@ export default function ArticlePage() {
 
   return (
     <>
-      <div className={styles.bottomBar}>
-        <a href="/" className={styles.barBtn} aria-label="Home">🏠</a>
+      <div className={styles.topBar}>
+        <HamburgerMenu />
       </div>
       <div
         className={styles.wrapper}

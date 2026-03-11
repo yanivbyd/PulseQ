@@ -39,11 +39,10 @@ function isSelected(el: HTMLElement) {
   return el.className.includes("selected");
 }
 
-describe("ArticlePage bottom bar", () => {
-  test("renders a home link in the bottom bar", async () => {
+describe("ArticlePage top bar", () => {
+  test("renders hamburger menu toggle", async () => {
     renderArticlePage();
-    const homeLink = await screen.findByRole("link", { name: "Home" });
-    expect(homeLink).toHaveAttribute("href", "/");
+    expect(await screen.findByRole("button", { name: "Open menu" })).toBeInTheDocument();
   });
 });
 

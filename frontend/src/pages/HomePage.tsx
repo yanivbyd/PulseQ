@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { fetchArticleSummaries, triggerGenerate, type ArticleSummary } from "../api";
+import HamburgerMenu from "../components/HamburgerMenu";
 import styles from "./HomePage.module.css";
 
 type ActionState = "idle" | "active" | "cooldown";
@@ -61,7 +62,11 @@ export default function HomePage() {
 
   return (
     <main className={styles.container}>
-      <h1 className={styles.pageTitle}>Articles</h1>
+      <div className={styles.pageHeader}>
+        <span className={styles.headerSpacer} />
+        <h1 className={styles.pageTitle}>Articles</h1>
+        <HamburgerMenu />
+      </div>
       <ul className={styles.list}>
         {articles.length === 0
           ? <li className={styles.empty}>Nothing new to read.</li>
@@ -75,7 +80,6 @@ export default function HomePage() {
       </ul>
       {toast && <div className={styles.toast}>{toast}</div>}
       <div className={styles.bottomBar}>
-        <a href="/topics" className={styles.barBtn} aria-label="Topics">&#128203;</a>
         <button
           className={styles.barBtn}
           aria-label="Generate"

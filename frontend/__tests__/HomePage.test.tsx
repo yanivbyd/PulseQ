@@ -81,14 +81,16 @@ describe("Generate button", () => {
   });
 });
 
-describe("Topics nav link", () => {
+describe("Hamburger menu", () => {
   beforeEach(() => {
     vi.mocked(api.fetchArticleSummaries).mockResolvedValue(SUMMARIES);
   });
 
-  test("shows a topics link in the bottom bar", async () => {
+  test("opens nav menu with Articles and Topics links", async () => {
     renderPage();
-    await waitFor(() => expect(screen.getByRole("link", { name: "Topics" })).toBeInTheDocument());
+    await waitFor(() => screen.getByRole("button", { name: "Open menu" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open menu" }));
     expect(screen.getByRole("link", { name: "Topics" })).toHaveAttribute("href", "/topics");
+    expect(screen.getByRole("link", { name: "Articles" })).toHaveAttribute("href", "/");
   });
 });

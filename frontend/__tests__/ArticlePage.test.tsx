@@ -29,11 +29,11 @@ test("shows loading state initially", () => {
   expect(screen.getByText("Loading...")).toBeInTheDocument();
 });
 
-test("renders article HTML and home link in bottom bar, sets page title", async () => {
+test("renders article HTML, hamburger menu, and sets page title", async () => {
   vi.mocked(api.fetchArticle).mockResolvedValue(ARTICLE);
   renderPage();
   await waitFor(() => expect(screen.getByText("How Load Balancers Work")).toBeInTheDocument());
-  expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+  expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
   expect(document.title).toBe("How Load Balancers Work");
 });
 

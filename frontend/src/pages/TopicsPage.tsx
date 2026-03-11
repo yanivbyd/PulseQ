@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { fetchTopics, triggerScout, type Topic } from "../api";
+import HamburgerMenu from "../components/HamburgerMenu";
 import styles from "./TopicsPage.module.css";
 
 type ActionState = "idle" | "active" | "cooldown";
@@ -88,7 +89,11 @@ export default function TopicsPage() {
 
   return (
     <main className={styles.container}>
-      <h1 className={styles.pageTitle}>Topics</h1>
+      <div className={styles.pageHeader}>
+        <span className={styles.headerSpacer} />
+        <h1 className={styles.pageTitle}>Topics</h1>
+        <HamburgerMenu />
+      </div>
       <ul className={styles.list}>
         {topics.length === 0
           ? <li className={styles.empty}>No topics configured.</li>
@@ -99,7 +104,6 @@ export default function TopicsPage() {
       </ul>
       {toast && <div className={styles.toast}>{toast}</div>}
       <div className={styles.bottomBar}>
-        <a href="/" className={styles.barBtn} aria-label="Home">&#127968;</a>
         <button
           className={styles.barBtn}
           aria-label="Refresh Topics"
