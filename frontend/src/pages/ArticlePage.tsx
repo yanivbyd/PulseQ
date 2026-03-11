@@ -70,9 +70,9 @@ export default function ArticlePage() {
       <QuizSection quiz={article.quiz} />
       <div className={styles.feedback}>
         <div className={styles.feedbackCard}>
-          <p className={styles.feedbackTitle}>Feedback</p>
+          <p className={styles.feedbackTitle}><span>🏎️</span> Tune the Signal</p>
           <div className={styles.reactionRow}>
-            <span className={styles.reactionLabel}>Did you enjoy this article?</span>
+            <span className={styles.reactionLabel}>Hit or miss?</span>
             <div className={styles.feedbackButtons}>
               <button
                 className={`${styles.feedbackBtn} ${reaction === "like" ? styles.selected : ""}`}

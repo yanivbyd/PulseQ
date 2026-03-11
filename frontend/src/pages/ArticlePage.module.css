@@ -36,19 +36,21 @@
 }
 
 .feedbackCard {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: var(--radius);
   padding: 1.25rem;
 }
 
 .feedbackTitle {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 1.1rem;
 }
 
 /* ── Reaction row ── */
