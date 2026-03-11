@@ -64,10 +64,4 @@ The stylesheet constraints stay fixed. Everything else can breathe.
 
 - `<h1>` must be the article title; it is used as the page title by the server
 - Byline is always `<p class="byline">PulseQ Daily Brief</p>` inside the `.header-card`
-- No links, no navigation, no footer — just the article, with one exception: the Further Reading section below.
-
----
-
-## Further Reading
-
-End every article with a `.section` containing an `<h2>` titled "Further Reading" and a list of exactly 3 links to real, publicly accessible blog posts or documentation pages that are directly relevant to the article's topic. Choose well-known sources (official docs, major engineering blogs, reputable publications). Only include URLs you are confident exist. Use plain `<a href="...">` tags — no JavaScript, no tracking parameters.
+- No links, no navigation, no footer — just the article. Do not include a Further Reading section.

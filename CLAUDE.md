@@ -79,18 +79,18 @@ Specifications are developed iteratively through collaboration:
   - By answering questions directly in the document
   - By adding comments in `<<...>>` format within the spec
 - On each iteration:
-  - When a user answers a question, add the answer as a section below the question — do NOT delete the question yet
+  - When a user answers a question, incorporate the answer into the spec body and remove the question entirely
   - Remove the `<<...>>` markers once addressed
-  - Remove the "Questions for Clarification" section (questions and answers) only once the spec is finalized
+  - Remove the entire "Questions for Clarification" section once all questions are resolved
 - Continue iterating until the spec is finalized
 
-**Key Principle:** Each revision should cleanly incorporate feedback. Questions remain visible alongside their answers until the spec is finalized.
+**Key Principle:** Each revision should cleanly incorporate feedback. Once a question is answered, the answer lives in the spec body — not in a Q&A section.
 
 **Spec Length:**
-- The body of a finalized spec (excluding "Questions for Clarification" and "Commit Plan" sections) must not exceed **200 lines** (soft limit). Prefer concise prose over verbose code snippets.
+- The body of a finalized spec (excluding "Commit Plan") must not exceed **200 lines** (soft limit). Prefer concise prose over verbose code snippets.
 
 **Commit Plan:**
-- Each finalized spec must include a "Commit Plan" section at the end
-- Split along meaningful boundaries (e.g. database schema before agent logic, shared utilities before dependents). Avoid micro-commits for trivial changes; avoid bundling unrelated work into one giant commit
-- Each commit must include its own tests — never commit code without the tests for that code
-- Each commit entry should follow the format: `<action>: <brief description>` with a one-sentence explanation of what it contains
+- Each finalized spec must include a "Commit Plan" section at the end with a **single commit** covering all changes.
+- If the spec is large enough that a single commit feels unwieldy, that is a signal the spec should be broken into smaller specs — not that the commit plan should be split. Recommend this to the user instead of creating multiple commits.
+- The commit must include its own tests — never commit code without the tests for that code.
+- The commit entry should follow the format: `<action>: <brief description>` with a one-sentence explanation of what it contains.
