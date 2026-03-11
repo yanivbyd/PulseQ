@@ -51,21 +51,6 @@
   text-decoration: underline;
 }
 
-.markReadBtn {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  font-size: 1.1rem;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-}
-
-.markReadBtn:hover {
-  color: var(--fg);
-}
-
 .status {
   padding: 2rem 1rem;
   text-align: center;

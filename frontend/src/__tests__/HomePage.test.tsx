@@ -8,7 +8,6 @@ import * as api from "../api";
 vi.mock("../api", () => ({
   fetchArticleSummaries: vi.fn(),
   triggerGenerate: vi.fn(),
-  postMarkRead: vi.fn(),
 }));
 
 vi.stubEnv("VITE_USER_ID", "user1");
@@ -26,7 +25,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue(ARTICLES);
   vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
-  vi.mocked(api.postMarkRead).mockResolvedValue(undefined);
 });
 
 describe("HomePage article list", () => {
@@ -35,31 +33,13 @@ describe("HomePage article list", () => {
     expect(await screen.findByRole("heading", { name: "Articles" })).toBeInTheDocument();
     expect(screen.getByText("Article One")).toBeInTheDocument();
     expect(screen.getByText("Article Two")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Mark as read" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Mark as read" })).not.toBeInTheDocument();
   });
 
   test("shows empty state when no articles", async () => {
     vi.mocked(api.fetchArticleSummaries).mockResolvedValue([]);
     renderHomePage();
     expect(await screen.findByText("Nothing new to read.")).toBeInTheDocument();
-  });
-
-  test("clicking mark-as-read removes the row and calls API", async () => {
-    renderHomePage();
-    await screen.findByText("Article One");
-    await userEvent.click(screen.getAllByRole("button", { name: "Mark as read" })[0]);
-    expect(screen.queryByText("Article One")).not.toBeInTheDocument();
-    expect(screen.getByText("Article Two")).toBeInTheDocument();
-    expect(api.postMarkRead).toHaveBeenCalledWith("user1", "a1", true, expect.any(String));
-  });
-
-  test("restores row and shows toast on mark-as-read failure", async () => {
-    vi.mocked(api.postMarkRead).mockRejectedValue(new Error("network error"));
-    renderHomePage();
-    await screen.findByText("Article One");
-    await userEvent.click(screen.getAllByRole("button", { name: "Mark as read" })[0]);
-    await waitFor(() => expect(screen.getByText("Article One")).toBeInTheDocument());
-    expect(screen.getByText(/failed to mark as read/i)).toBeInTheDocument();
   });
 });
 

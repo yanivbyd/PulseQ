@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, triggerGenerate, postMarkRead, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, triggerGenerate, type ArticleSummary } from "../api";
 import styles from "./HomePage.module.css";
 
 type ActionState = "idle" | "active" | "cooldown";
@@ -56,20 +56,6 @@ export default function HomePage() {
     generateCooldown.current = setTimeout(() => setGenerateState("idle"), 60_000);
   }
 
-  async function handleMarkRead(article: ArticleSummary) {
-    setArticles((prev) => prev.filter((a) => a.id !== article.id));
-    const userId = import.meta.env.VITE_USER_ID as string;
-    const idempotencyKey = crypto.randomUUID();
-    try {
-      await postMarkRead(userId, article.id, true, idempotencyKey);
-    } catch {
-      setArticles((prev) =>
-        [...prev, article].sort((a, b) => b.creation_timestamp.localeCompare(a.creation_timestamp))
-      );
-      showToast("Failed to mark as read. Please try again.");
-    }
-  }
-
   if (loading) return <div className={styles.status}>Loading...</div>;
   if (error) return <div className={styles.status}>{error}</div>;
 
@@ -83,11 +69,6 @@ export default function HomePage() {
               <li key={a.id} className={styles.row}>
                 <span className={styles.dot} aria-hidden="true" />
                 <Link to={`/${a.id}`} className={styles.title}>{a.title}</Link>
-                <button
-                  className={styles.markReadBtn}
-                  aria-label="Mark as read"
-                  onClick={() => handleMarkRead(a)}
-                >✓</button>
               </li>
             ))
         }
