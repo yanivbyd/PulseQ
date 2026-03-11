@@ -20,7 +20,7 @@ export default function QuizSection({ quiz }: Props) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <p className={styles.title}>Test your knowledge</p>
+        <p className={styles.title}><span className={styles.icon}>🎲</span> Pulse Check</p>
         <div className={styles.questions}>
         {quiz.map((q, qi) => (
           <div key={qi} className={styles.question}>

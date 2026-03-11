@@ -21,7 +21,7 @@ describe("QuizSection", () => {
 
   test("renders card with title and question text", () => {
     render(<QuizSection quiz={QUIZ} />);
-    expect(screen.getByText("Test your knowledge")).toBeInTheDocument();
+    expect(screen.getByText(/Pulse Check/i)).toBeInTheDocument();
     expect(screen.getByText("What protocol?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /QUIC/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /TCP/i })).toBeInTheDocument();

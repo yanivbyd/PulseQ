@@ -5,19 +5,26 @@
 }
 
 .card {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: var(--radius);
   padding: 1.25rem;
 }
 
 .title {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 1.1rem;
+}
+
+.icon {
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 .questions {
@@ -35,7 +42,7 @@
 .questionText {
   margin: 0;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--fg);
 }
 
@@ -53,44 +60,47 @@
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--card);
   cursor: pointer;
   font-size: 0.85rem;
   color: var(--fg);
   line-height: 1.45;
   font-family: inherit;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
 }
 
 .option:hover {
   border-color: var(--accent);
-  background: var(--card);
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  transform: translateX(2px);
 }
 
 .correct {
-  border-color: #16a34a;
-  background: #f0fdf4;
-  color: #14532d;
+  border-color: var(--green-fg);
+  background: var(--green-bg);
+  color: var(--green-fg);
 }
 
 .correct:hover {
-  border-color: #16a34a;
-  background: #f0fdf4;
+  border-color: var(--green-fg);
+  background: var(--green-bg);
+  transform: none;
 }
 
 .wrong {
-  border-color: #dc2626;
-  background: #fef2f2;
-  color: #7f1d1d;
+  border-color: var(--red-fg);
+  background: var(--red-bg);
+  color: var(--red-fg);
 }
 
 .wrong:hover {
-  border-color: #dc2626;
-  background: #fef2f2;
+  border-color: var(--red-fg);
+  background: var(--red-bg);
+  transform: none;
 }
 
 .indicator {
-  font-weight: 700;
+  font-weight: 800;
   margin-left: 0.6rem;
   flex-shrink: 0;
 }
