@@ -39,16 +39,25 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(400, { error: "Invalid JSON body" });
     }
 
-    const { userId: genUserId } = parsed as Record<string, unknown>;
+    const { userId: genUserId, customTopic } = parsed as Record<string, unknown>;
     if (!genUserId || typeof genUserId !== "string") {
       console.warn(`generate: missing or invalid userId: ${JSON.stringify(genUserId)}`);
       return jsonResponse(400, { error: "userId is required" });
     }
+    if (customTopic !== undefined) {
+      if (typeof customTopic !== "string" || customTopic.length > 1000) {
+        console.warn(`generate: customTopic invalid or too long: length=${typeof customTopic === "string" ? customTopic.length : typeof customTopic}`);
+        return jsonResponse(400, { error: "customTopic must be a string of at most 1000 characters" });
+      }
+    }
+
+    const sfnInput: Record<string, string> = { userId: genUserId };
+    if (customTopic !== undefined) sfnInput.customTopic = customTopic as string;
 
     try {
       await sfnClient.send(new StartExecutionCommand({
         stateMachineArn,
-        input: JSON.stringify({ userId: genUserId }),
+        input: JSON.stringify(sfnInput),
       }));
       return jsonResponse(202, { status: "generating" });
     } catch (err) {

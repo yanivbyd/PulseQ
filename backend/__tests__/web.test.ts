@@ -379,6 +379,38 @@ describe("POST /api/generate", () => {
     expect(JSON.parse(cmd.input.input!)).toEqual({ userId: "user1" });
   });
 
+  test("forwards customTopic in state machine input when provided", async () => {
+    const sfn = makeMockSfn();
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, sfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1", customTopic: "quantum computing" })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(202);
+    const cmd = (sfn.send as jest.Mock).mock.calls[0][0] as StartExecutionCommand;
+    expect(JSON.parse(cmd.input.input!)).toEqual({ userId: "user1", customTopic: "quantum computing" });
+  });
+
+  test("omits customTopic from state machine input when not provided", async () => {
+    const sfn = makeMockSfn();
+    await createHandler(makeMockDdb({}), mockLambda, mockS3, sfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1" })),
+    );
+    const cmd = (sfn.send as jest.Mock).mock.calls[0][0] as StartExecutionCommand;
+    const input = JSON.parse(cmd.input.input!);
+    expect(input.customTopic).toBeUndefined();
+  });
+
+  test("returns 400 when customTopic exceeds 1000 characters", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const longTopic = "a".repeat(1001);
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1", customTopic: longTopic })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/1000/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("customTopic"));
+    warnSpy.mockRestore();
+  });
+
   test("returns 400 when userId is missing", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(

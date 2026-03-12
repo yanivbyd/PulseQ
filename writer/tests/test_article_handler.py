@@ -281,3 +281,45 @@ class TestArticleHandler:
         handler({"userId": "user1"}, None)
 
         assert sm.get_secret_value.call_count == 1
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_custom_topic_skips_pool_fetch_and_consume(self, mock_gen, mock_boto_client, mock_boto_resource):
+        """Custom topic path: no DynamoDB topic fetch, no topic deletion."""
+        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        from writer.article_handler import handler
+        result = handler({"userId": "user1", "customTopic": "quantum computing"}, None)
+
+        assert result == {"articleId": "abc12", "userId": "user1", "articleTitle": "Load Balancers"}
+        # custom topic used verbatim — no topic pool read or write
+        topics_table.get_item.assert_not_called()
+        topics_table.update_item.assert_not_called()
+        # article still saved normally
+        articles_table.put_item.assert_called_once()
+        inbox_table.put_item.assert_called_once()
+        # generate_article called with the custom topic text
+        mock_gen.assert_called_once_with(topic="quantum computing", article_instructions=mock_gen.call_args.kwargs["article_instructions"])
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_random_topic_path_unchanged(self, mock_gen, mock_boto_client, mock_boto_resource):
+        """Without customTopic the handler picks and consumes a topic from the pool."""
+        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        from writer.article_handler import handler
+        result = handler({"userId": "user1"}, None)
+
+        assert result["articleId"] == "abc12"
+        topics_table.get_item.assert_called_once()
+        topics_table.update_item.assert_called_once()
+        articles_table.put_item.assert_called_once()
+        inbox_table.put_item.assert_called_once()

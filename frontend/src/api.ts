@@ -38,12 +38,14 @@ export async function fetchArticle(articleId: string): Promise<Article> {
   return res.json();
 }
 
-export async function triggerGenerate(): Promise<void> {
+export async function triggerGenerate(customTopic?: string): Promise<void> {
   const userId = import.meta.env.VITE_USER_ID as string;
+  const body: Record<string, string> = { userId };
+  if (customTopic !== undefined) body.customTopic = customTopic;
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Failed to generate: ${res.status}`);
 }

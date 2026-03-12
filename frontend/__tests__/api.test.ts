@@ -45,14 +45,24 @@ describe("fetchArticle", () => {
 });
 
 describe("triggerGenerate", () => {
-  test("sends POST /api/generate with userId and resolves on 202", async () => {
+  test("sends POST /api/generate with userId only when no customTopic", async () => {
     mockFetch(true, { status: "generating" }, 202);
     await expect(triggerGenerate()).resolves.toBeUndefined();
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("/api/generate");
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({ "Content-Type": "application/json" });
-    expect(JSON.parse(init.body)).toMatchObject({ userId: expect.any(String) });
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ userId: expect.any(String) });
+    expect(body.customTopic).toBeUndefined();
+  });
+
+  test("includes customTopic in body when provided", async () => {
+    mockFetch(true, { status: "generating" }, 202);
+    await expect(triggerGenerate("quantum computing")).resolves.toBeUndefined();
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body.customTopic).toBe("quantum computing");
   });
 
   test("throws on 5xx", async () => {

@@ -1,19 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { fetchArticleSummaries, triggerGenerate, type ArticleSummary } from "../api";
+import { fetchArticleSummaries, type ArticleSummary } from "../api";
 import HamburgerMenu from "../components/HamburgerMenu";
 import styles from "./HomePage.module.css";
-
-type ActionState = "idle" | "active" | "cooldown";
 
 export default function HomePage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generateState, setGenerateState] = useState<ActionState>("idle");
-  const [toast, setToast] = useState<string | null>(null);
-  const generateCooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // VITE_USER_ID is statically substituted by Vite at build time; this guard
@@ -30,32 +24,6 @@ export default function HomePage() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
-
-  useEffect(() => {
-    return () => {
-      if (generateCooldown.current) clearTimeout(generateCooldown.current);
-      if (toastTimer.current) clearTimeout(toastTimer.current);
-    };
-  }, []);
-
-  function showToast(msg: string) {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4_000);
-  }
-
-  async function handleGenerate() {
-    if (generateState !== "idle") return;
-    setGenerateState("active");
-    try {
-      await triggerGenerate();
-      showToast("Generating… you'll get a notification when it's ready.");
-    } catch {
-      showToast("Something went wrong. Try again in a minute.");
-    }
-    setGenerateState("cooldown");
-    generateCooldown.current = setTimeout(() => setGenerateState("idle"), 60_000);
-  }
 
   if (loading) return <div className={styles.status}>Loading...</div>;
   if (error) return <div className={styles.status}>{error}</div>;
@@ -78,15 +46,6 @@ export default function HomePage() {
             ))
         }
       </ul>
-      {toast && <div className={styles.toast}>{toast}</div>}
-      <div className={styles.bottomBar}>
-        <button
-          className={styles.barBtn}
-          aria-label="Generate"
-          disabled={generateState !== "idle"}
-          onClick={handleGenerate}
-        >&#9999;&#65039;</button>
-      </div>
     </main>
   );
 }

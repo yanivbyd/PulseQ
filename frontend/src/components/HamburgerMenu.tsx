@@ -5,6 +5,7 @@ import styles from "./HamburgerMenu.module.css";
 const NAV_LINKS = [
   { label: "Articles", to: "/", icon: "📰" },
   { label: "Topics", to: "/topics", icon: "🗂️" },
+  { label: "New Article", to: "/generate", icon: "✏️" },
 ];
 
 export default function HamburgerMenu() {

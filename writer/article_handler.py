@@ -97,18 +97,25 @@ def handler(event, context):
         logger.error("article-handler: missing userId in event")
         raise ValueError("userId is required")
 
+    custom_topic = event.get("customTopic")
+
     api_key = load_api_key()
     os.environ["OPENAI_API_KEY"] = api_key
 
     s3 = boto3.client("s3", region_name=AWS_REGION)
     ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
-    topics_table = ddb.Table(os.environ["TOPICS_TABLE"])
 
     article_instructions = load_instructions(s3, os.environ["INPUT_BUCKET"])
-    topic, chosen, topics = pick_topic(topics_table, user_id)
-    article = write_article(topic, article_instructions)
+
+    if custom_topic:
+        topic = custom_topic
+        article = write_article(topic, article_instructions)
+    else:
+        topics_table = ddb.Table(os.environ["TOPICS_TABLE"])
+        topic, chosen, topics = pick_topic(topics_table, user_id)
+        article = write_article(topic, article_instructions)
+        consume_topic(topics_table, user_id, chosen, topics)
 
     save_article(ddb, article["id"], user_id, article, now_utc_iso())
-    consume_topic(topics_table, user_id, chosen, topics)
 
     return {"articleId": article["id"], "userId": user_id, "articleTitle": article["title"]}

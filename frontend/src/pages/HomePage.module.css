@@ -1,7 +1,7 @@
 .container {
   max-width: 680px;
   margin: 0 auto;
-  padding: 1.5rem 1rem calc(56px + env(safe-area-inset-bottom, 0px) + 1rem);
+  padding: 1.5rem 1rem;
 }
 
 .pageHeader {
@@ -72,53 +72,4 @@
   padding: 2rem 0;
   color: var(--muted);
   text-align: center;
-}
-
-.toast {
-  position: fixed;
-  bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 0.75rem);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--fg);
-  font-size: 0.85rem;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 200;
-  max-width: 90vw;
-  text-align: center;
-}
-
-.bottomBar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 0 1rem env(safe-area-inset-bottom, 0px);
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 56px;
-  z-index: 100;
-}
-
-.barBtn {
-  background: none;
-  border: none;
-  font-size: 1.3rem;
-  cursor: pointer;
-  padding: 0.5rem;
-  line-height: 1;
-  border-radius: var(--radius);
-  text-decoration: none;
-  color: inherit;
-}
-
-.barBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }

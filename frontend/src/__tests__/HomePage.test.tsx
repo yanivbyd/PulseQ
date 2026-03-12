@@ -1,5 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { vi, describe, test, expect, beforeEach } from "vitest";
 import HomePage from "../pages/HomePage";
@@ -7,7 +6,6 @@ import * as api from "../api";
 
 vi.mock("../api", () => ({
   fetchArticleSummaries: vi.fn(),
-  triggerGenerate: vi.fn(),
 }));
 
 vi.stubEnv("VITE_USER_ID", "user1");
@@ -24,7 +22,6 @@ function renderHomePage() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.fetchArticleSummaries).mockResolvedValue(ARTICLES);
-  vi.mocked(api.triggerGenerate).mockResolvedValue(undefined);
 });
 
 describe("HomePage article list", () => {
@@ -33,7 +30,6 @@ describe("HomePage article list", () => {
     expect(await screen.findByRole("heading", { name: "Articles" })).toBeInTheDocument();
     expect(screen.getByText("Article One")).toBeInTheDocument();
     expect(screen.getByText("Article Two")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Mark as read" })).not.toBeInTheDocument();
   });
 
   test("shows empty state when no articles", async () => {
@@ -41,36 +37,10 @@ describe("HomePage article list", () => {
     renderHomePage();
     expect(await screen.findByText("Nothing new to read.")).toBeInTheDocument();
   });
-});
 
-describe("HomePage bottom bar", () => {
-  test("renders generate button and hamburger toggle", async () => {
+  test("does not render a generate button", async () => {
     renderHomePage();
-    expect(await screen.findByRole("button", { name: "Generate" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open menu" })).toBeInTheDocument();
-  });
-
-  test("clicking generate calls triggerGenerate and shows toast", async () => {
-    renderHomePage();
-    await screen.findByRole("button", { name: "Generate" });
-    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
-    expect(api.triggerGenerate).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(screen.getByText(/generating/i)).toBeInTheDocument());
-  });
-
-  test("generate button is disabled while active", async () => {
-    vi.mocked(api.triggerGenerate).mockImplementation(() => new Promise(() => {}));
-    renderHomePage();
-    await screen.findByRole("button", { name: "Generate" });
-    userEvent.click(screen.getByRole("button", { name: "Generate" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled());
-  });
-
-  test("shows error toast when generate fails", async () => {
-    vi.mocked(api.triggerGenerate).mockRejectedValue(new Error("error"));
-    renderHomePage();
-    await screen.findByRole("button", { name: "Generate" });
-    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
-    await waitFor(() => expect(screen.getByText(/something went wrong/i)).toBeInTheDocument());
+    await screen.findByRole("heading", { name: "Articles" });
+    expect(screen.queryByRole("button", { name: "Generate" })).not.toBeInTheDocument();
   });
 });

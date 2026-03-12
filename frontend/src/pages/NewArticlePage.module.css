@@ -1,0 +1,87 @@
+.container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.pageHeader {
+  margin: -1.5rem -1rem 1.5rem;
+  padding: 0 0.75rem;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+}
+
+.headerSpacer {
+  width: 2rem;
+}
+
+.pageTitle {
+  flex: 1;
+  padding: 1.1rem 0;
+  color: #fff;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.modeRow {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.modeLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.topicInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.95rem;
+  resize: vertical;
+  min-height: 80px;
+  margin-bottom: 1.5rem;
+  font-family: inherit;
+}
+
+.topicInput:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.generateBtn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.generateBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status {
+  margin-top: 1.25rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
