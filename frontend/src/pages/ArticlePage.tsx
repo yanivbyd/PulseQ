@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { fetchArticle, postFeedback, type Article } from "../api";
 import HamburgerMenu from "../components/HamburgerMenu";
 import QuizSection from "../components/QuizSection";
+import FollowUpSection from "../components/FollowUpSection";
 import styles from "./ArticlePage.module.css";
 
 export default function ArticlePage() {
@@ -108,6 +109,7 @@ export default function ArticlePage() {
           {freeTextError && <span className={styles.feedbackErr}>Something went wrong. Try again.</span>}
         </div>
       </div>
+      <FollowUpSection articleId={article.articleId} />
     </>
   );
 }

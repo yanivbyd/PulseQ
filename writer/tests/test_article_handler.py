@@ -20,6 +20,8 @@ SAMPLE_ARTICLE = {
     "accent": "#0d9488",
 }
 
+ORIGINAL_HTML = '<div class="header-card"><h1>Original Article</h1></div>'
+
 
 def _make_sm_client(api_key="sk-test"):
     sm = MagicMock()
@@ -31,6 +33,8 @@ def _make_s3_client():
     def _get_object(Bucket, Key):
         content = {
             "shared/article_generation_instructions.txt": b"# Article Instructions",
+            "shared/follow_up_article_instructions.txt": b"# Follow-up Instructions",
+            "user1/user_tastes.md": b"# User Tastes",
         }.get(Key)
         if content is None:
             raise Exception(f"unexpected key: {Key}")
@@ -93,7 +97,7 @@ def _boto_client_factory(sm=None, s3=None):
     return factory
 
 
-def _fake_generate_article(topic, article_instructions):
+def _fake_generate_article(topic, article_instructions, user_tastes):
     return SAMPLE_ARTICLE.copy()
 
 
@@ -303,7 +307,7 @@ class TestArticleHandler:
         articles_table.put_item.assert_called_once()
         inbox_table.put_item.assert_called_once()
         # generate_article called with the custom topic text
-        mock_gen.assert_called_once_with(topic="quantum computing", article_instructions=mock_gen.call_args.kwargs["article_instructions"])
+        mock_gen.assert_called_once_with(topic="quantum computing", article_instructions=mock_gen.call_args.kwargs["article_instructions"], user_tastes=mock_gen.call_args.kwargs["user_tastes"])
 
     @patch.dict(os.environ, ENV)
     @patch("writer.article_handler.boto3.resource")
@@ -323,3 +327,118 @@ class TestArticleHandler:
         topics_table.update_item.assert_called_once()
         articles_table.put_item.assert_called_once()
         inbox_table.put_item.assert_called_once()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_follow_up_article", return_value=SAMPLE_ARTICLE.copy())
+    def test_follow_up_happy_path(self, mock_follow_up, mock_boto_client, mock_boto_resource):
+        """Follow-up path: skips topic pool, loads original article and user tastes, saves with sourceArticleId."""
+        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
+        articles_table.get_item.return_value = {"Item": {"articleId": "orig-abc", "html": ORIGINAL_HTML}}
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        from writer.article_handler import handler
+        result = handler({
+            "userId": "user1",
+            "followUpArticleId": "orig-abc",
+            "followUpExtraContext": "focus on costs",
+        }, None)
+
+        assert result == {"articleId": "abc12", "userId": "user1", "articleTitle": "Load Balancers"}
+        # Topic pool not touched
+        topics_table.get_item.assert_not_called()
+        topics_table.update_item.assert_not_called()
+        # generate_follow_up_article called with original HTML, extra context, user tastes, instructions
+        mock_follow_up.assert_called_once_with(
+            ORIGINAL_HTML, "focus on costs", "# User Tastes", "# Follow-up Instructions"
+        )
+        # articles_table saved with sourceArticleId
+        art_item = articles_table.put_item.call_args.kwargs["Item"]
+        assert art_item["sourceArticleId"] == "orig-abc"
+        # inbox saved normally (no sourceArticleId)
+        inbox_item = inbox_table.put_item.call_args.kwargs["Item"]
+        assert "sourceArticleId" not in inbox_item
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    def test_follow_up_original_article_not_found_raises(self, mock_boto_client, mock_boto_resource):
+        """Missing original article raises and logs error."""
+        ddb, _, articles_table, _ = _make_ddb_resource()
+        articles_table.get_item.return_value = {}  # no Item — get_item is called via ddb.Table()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        with patch("writer.article_handler.logger.error") as error_spy:
+            from writer.article_handler import handler
+            with pytest.raises(ValueError, match="article not found"):
+                handler({
+                    "userId": "user1",
+                    "followUpArticleId": "missing-id",
+                    "followUpExtraContext": "context",
+                }, None)
+        error_spy.assert_called()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    def test_follow_up_user_tastes_load_failure_raises(self, mock_boto_client, mock_boto_resource):
+        """Failure loading user_tastes.md raises and logs error."""
+        ddb, _, articles_table, _ = _make_ddb_resource()
+        articles_table.get_item.return_value = {"Item": {"articleId": "orig-abc", "html": ORIGINAL_HTML}}  # get_item via ddb.Table()
+
+        def _s3_no_tastes(Bucket, Key):
+            content = {
+                "shared/follow_up_article_instructions.txt": b"# Follow-up Instructions",
+            }.get(Key)
+            if content is None:
+                raise Exception(f"unexpected key: {Key}")
+            body = MagicMock()
+            body.read.return_value = content
+            return {"Body": body}
+
+        s3 = MagicMock()
+        s3.get_object.side_effect = _s3_no_tastes
+        mock_boto_client.side_effect = _boto_client_factory(s3=s3)
+        mock_boto_resource.return_value = ddb
+
+        with patch("writer.article_handler.logger.error") as error_spy:
+            from writer.article_handler import handler
+            with pytest.raises(Exception):
+                handler({
+                    "userId": "user1",
+                    "followUpArticleId": "orig-abc",
+                    "followUpExtraContext": "context",
+                }, None)
+        error_spy.assert_called()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    def test_follow_up_instructions_load_failure_raises(self, mock_boto_client, mock_boto_resource):
+        """Failure loading follow_up_article_instructions.txt raises and logs error."""
+        ddb, _, articles_table, _ = _make_ddb_resource()
+
+        def _s3_no_follow_up_instructions(Bucket, Key):
+            if Key == "shared/article_generation_instructions.txt":
+                body = MagicMock()
+                body.read.return_value = b"# Article Instructions"
+                return {"Body": body}
+            raise Exception(f"unexpected key: {Key}")
+
+        s3 = MagicMock()
+        s3.get_object.side_effect = _s3_no_follow_up_instructions
+        mock_boto_client.side_effect = _boto_client_factory(s3=s3)
+        mock_boto_resource.return_value = ddb
+
+        with patch("writer.article_handler.logger.error") as error_spy:
+            from writer.article_handler import handler
+            with pytest.raises(Exception):
+                handler({
+                    "userId": "user1",
+                    "followUpArticleId": "orig-abc",
+                    "followUpExtraContext": "context",
+                }, None)
+        error_spy.assert_called()

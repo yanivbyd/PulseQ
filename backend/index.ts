@@ -39,7 +39,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(400, { error: "Invalid JSON body" });
     }
 
-    const { userId: genUserId, customTopic } = parsed as Record<string, unknown>;
+    const { userId: genUserId, customTopic, followUpArticleId, followUpExtraContext } = parsed as Record<string, unknown>;
     if (!genUserId || typeof genUserId !== "string") {
       console.warn(`generate: missing or invalid userId: ${JSON.stringify(genUserId)}`);
       return jsonResponse(400, { error: "userId is required" });
@@ -50,9 +50,27 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
         return jsonResponse(400, { error: "customTopic must be a string of at most 1000 characters" });
       }
     }
+    if (customTopic !== undefined && followUpArticleId !== undefined) {
+      console.warn("generate: customTopic and followUpArticleId are mutually exclusive");
+      return jsonResponse(400, { error: "customTopic and followUpArticleId are mutually exclusive" });
+    }
+    if (followUpArticleId !== undefined) {
+      if (typeof followUpArticleId !== "string" || !followUpArticleId) {
+        console.warn(`generate: followUpArticleId invalid: ${JSON.stringify(followUpArticleId)}`);
+        return jsonResponse(400, { error: "followUpArticleId must be a non-empty string" });
+      }
+      if (!followUpExtraContext || typeof followUpExtraContext !== "string" || (followUpExtraContext as string).length > 1000) {
+        console.warn(`generate: followUpExtraContext invalid: ${JSON.stringify(followUpExtraContext)}`);
+        return jsonResponse(400, { error: "followUpExtraContext must be a non-empty string of at most 1000 characters" });
+      }
+    }
 
     const sfnInput: Record<string, string> = { userId: genUserId };
     if (customTopic !== undefined) sfnInput.customTopic = customTopic as string;
+    if (followUpArticleId !== undefined) {
+      sfnInput.followUpArticleId = followUpArticleId as string;
+      sfnInput.followUpExtraContext = followUpExtraContext as string;
+    }
 
     try {
       await sfnClient.send(new StartExecutionCommand({

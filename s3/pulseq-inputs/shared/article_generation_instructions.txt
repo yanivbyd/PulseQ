@@ -50,6 +50,12 @@ The stylesheet constraints stay fixed. Everything else can breathe.
 
 ---
 
+## User Tastes
+
+You will receive a `--- USER TASTES ---` message before the topic. Use it to tailor the article's depth, angle, and emphasis to the reader's interests and preferences. The topic and factual accuracy always take precedence — user tastes shape *how* you write, not *what* is true.
+
+---
+
 ## Content
 
 - **Length:** ~800–1,000 words of body text. Enough to be substantive, short enough to read in one sitting on mobile. **Do not cut depth to stay within the word limit** — if the topic warrants more, write more. A thorough article that exceeds 1,000 words is better than a shallow one that hits the target.

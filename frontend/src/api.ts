@@ -79,6 +79,16 @@ export type FeedbackContent =
   | { type: "reaction"; reaction: "like" | "dislike" }
   | { type: "freeText"; text: string };
 
+export async function triggerFollowUp(followUpArticleId: string, followUpExtraContext: string): Promise<void> {
+  const userId = import.meta.env.VITE_USER_ID as string;
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, followUpArticleId, followUpExtraContext }),
+  });
+  if (!res.ok) throw new Error(`Failed to trigger follow-up: ${res.status}`);
+}
+
 export async function postFeedback(meta: FeedbackMeta, content: FeedbackContent): Promise<void> {
   const userId = import.meta.env.VITE_USER_ID as string;
   const res = await fetch("/api/feedback", {

@@ -72,7 +72,32 @@ def generate_quiz(client, html: str, quiz_prompt: str) -> list:
         return []
 
 
-def generate_article(topic: str, article_instructions: str) -> dict:
+def generate_follow_up_article(original_html: str, follow_up_extra_context: str, user_tastes: str, instructions: str) -> dict:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
+
+    client = openai.OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user",   "content": f"--- EXTRA CONTEXT ---\n{follow_up_extra_context}"},
+            {"role": "user",   "content": f"--- USER TASTES ---\n{user_tastes}"},
+            {"role": "user",   "content": f"--- ORIGINAL ARTICLE ---\n{original_html}"},
+        ],
+    )
+
+    html = strip_markdown_fences(response.choices[0].message.content)
+    return {
+        "id": generate_short_id(),
+        "html": html,
+        "title": _extract_title(html),
+        "accent": _extract_accent(html),
+    }
+
+
+def generate_article(topic: str, article_instructions: str, user_tastes: str) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
@@ -82,6 +107,7 @@ def generate_article(topic: str, article_instructions: str) -> dict:
         model="gpt-4o",
         messages=[
             {"role": "system", "content": article_instructions},
+            {"role": "user",   "content": f"--- USER TASTES ---\n{user_tastes}"},
             {"role": "user",   "content": f"--- TOPIC ---\n{topic}"},
         ],
     )

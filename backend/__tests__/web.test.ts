@@ -450,6 +450,84 @@ describe("POST /api/generate", () => {
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
   });
+
+  test("forwards followUpArticleId and followUpExtraContext in state machine input", async () => {
+    const sfn = makeMockSfn();
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, sfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
+        userId: "user1",
+        followUpArticleId: "orig-abc",
+        followUpExtraContext: "focus on costs",
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(202);
+    const cmd = (sfn.send as jest.Mock).mock.calls[0][0] as StartExecutionCommand;
+    expect(JSON.parse(cmd.input.input!)).toEqual({
+      userId: "user1",
+      followUpArticleId: "orig-abc",
+      followUpExtraContext: "focus on costs",
+    });
+  });
+
+  test("returns 400 when customTopic and followUpArticleId are both provided", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
+        userId: "user1",
+        customTopic: "quantum",
+        followUpArticleId: "orig-abc",
+        followUpExtraContext: "focus on costs",
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/mutually exclusive/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("mutually exclusive"));
+    warnSpy.mockRestore();
+  });
+
+  test("returns 400 when followUpArticleId is present but followUpExtraContext is missing", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
+        userId: "user1",
+        followUpArticleId: "orig-abc",
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/followUpExtraContext/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("followUpExtraContext"));
+    warnSpy.mockRestore();
+  });
+
+  test("returns 400 when followUpExtraContext exceeds 1000 characters", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
+        userId: "user1",
+        followUpArticleId: "orig-abc",
+        followUpExtraContext: "x".repeat(1001),
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/followUpExtraContext/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("followUpExtraContext"));
+    warnSpy.mockRestore();
+  });
+
+  test("returns 400 when followUpArticleId is an empty string", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
+        userId: "user1",
+        followUpArticleId: "",
+        followUpExtraContext: "focus on costs",
+      })),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body as string).error).toMatch(/followUpArticleId/);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("followUpArticleId"));
+    warnSpy.mockRestore();
+  });
 });
 
 describe("POST /api/scout", () => {

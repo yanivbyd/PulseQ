@@ -3,7 +3,7 @@ import pytest
 import openai
 from unittest.mock import patch, MagicMock
 
-from writer.writer import generate_short_id, generate_quiz, generate_article, strip_markdown_fences
+from writer.writer import generate_short_id, generate_quiz, generate_article, generate_follow_up_article, strip_markdown_fences
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -130,7 +130,8 @@ def test_happy_path(mock_openai):
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         result = generate_article(topic="N+1 Queries — Detection patterns.",
-                                  article_instructions="Style instructions.")
+                                  article_instructions="Style instructions.",
+                                  user_tastes="prefers concise")
 
     assert result["html"] == HTML_FRAGMENT
     assert result["title"] == "Test Article"
@@ -144,12 +145,13 @@ def test_topic_included_in_prompt(mock_openai):
     """Topic string is passed verbatim to the OpenAI article prompt; no history section."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        generate_article(topic="My Topic", article_instructions="Instructions")
+        generate_article(topic="My Topic", article_instructions="Instructions", user_tastes="tastes")
 
-    call_args = mock_openai.chat.completions.create.call_args_list[0]
-    user_message = call_args.kwargs["messages"][1]["content"]
-    assert "My Topic" in user_message
-    assert "HISTORY" not in user_message
+    messages = mock_openai.chat.completions.create.call_args_list[0].kwargs["messages"]
+    assert "tastes" in messages[1]["content"]
+    assert "USER TASTES" in messages[1]["content"]
+    assert "My Topic" in messages[2]["content"]
+    assert "HISTORY" not in messages[2]["content"]
 
 
 def test_missing_api_key():
@@ -157,7 +159,7 @@ def test_missing_api_key():
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            generate_article(topic="T", article_instructions="I")
+            generate_article(topic="T", article_instructions="I", user_tastes="t")
 
 
 def test_short_id_format():
@@ -180,7 +182,7 @@ def test_openai_error_propagates():
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            generate_article(topic="T", article_instructions="I")
+            generate_article(topic="T", article_instructions="I", user_tastes="t")
 
 
 def test_accent_fallback():
@@ -191,7 +193,7 @@ def test_accent_fallback():
     )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = generate_article(topic="T", article_instructions="I")
+        result = generate_article(topic="T", article_instructions="I", user_tastes="t")
 
     assert result["accent"] == "#5b5ef4"
 
@@ -204,6 +206,67 @@ def test_title_fallback():
     )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = generate_article(topic="T", article_instructions="I")
+        result = generate_article(topic="T", article_instructions="I", user_tastes="t")
 
     assert result["title"] == "New Article"
+
+
+# ── generate_follow_up_article() ─────────────────────────────────────────────
+
+def test_follow_up_happy_path(mock_openai):
+    """generate_follow_up_article() returns dict with id, html, title, and accent."""
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        result = generate_follow_up_article(
+            original_html="<p>original</p>",
+            follow_up_extra_context="focus on costs",
+            user_tastes="prefers concise",
+            instructions="Follow-up instructions.",
+        )
+
+    assert result["html"] == HTML_FRAGMENT
+    assert result["title"] == "Test Article"
+    assert result["accent"] == "#0d9488"
+    assert len(result["id"]) == 5
+
+
+def test_follow_up_sends_correct_messages(mock_openai):
+    """generate_follow_up_article sends system instructions and three user messages in order."""
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        generate_follow_up_article(
+            original_html="<p>orig html</p>",
+            follow_up_extra_context="deep dive on costs",
+            user_tastes="likes bullet points",
+            instructions="my instructions",
+        )
+
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "my instructions"}
+    assert messages[1]["role"] == "user"
+    assert "deep dive on costs" in messages[1]["content"]
+    assert "EXTRA CONTEXT" in messages[1]["content"]
+    assert messages[2]["role"] == "user"
+    assert "likes bullet points" in messages[2]["content"]
+    assert "USER TASTES" in messages[2]["content"]
+    assert messages[3]["role"] == "user"
+    assert "<p>orig html</p>" in messages[3]["content"]
+    assert "ORIGINAL ARTICLE" in messages[3]["content"]
+
+
+def test_follow_up_missing_api_key():
+    """Missing OPENAI_API_KEY raises EnvironmentError before any API call."""
+    env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
+    with patch.dict(os.environ, env, clear=True):
+        with pytest.raises(EnvironmentError):
+            generate_follow_up_article("<p>orig</p>", "ctx", "tastes", "instr")
+
+
+def test_follow_up_openai_error_propagates():
+    """An OpenAI API error propagates as OpenAIError."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = openai.OpenAIError("api failure")
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        with pytest.raises(openai.OpenAIError):
+            generate_follow_up_article("<p>orig</p>", "ctx", "tastes", "instr")
