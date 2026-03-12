@@ -60,7 +60,7 @@ def create_lambdas(
     )
     input_bucket.grant_read(article_fn)
     secret.grant_read(article_fn)
-    ddb_tables.articles_table.grant(article_fn, "dynamodb:PutItem")
+    ddb_tables.articles_table.grant(article_fn, "dynamodb:PutItem", "dynamodb:GetItem")
     ddb_tables.user_inbox_table.grant(article_fn, "dynamodb:PutItem")
     ddb_tables.topics_table.grant_read_write_data(article_fn)
 

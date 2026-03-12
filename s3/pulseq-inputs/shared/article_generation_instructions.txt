@@ -25,7 +25,7 @@ The shared stylesheet defines all CSS custom properties and component styles. Th
 
 The stylesheet defines these classes — use whichever suit the topic; do not force all into every article:
 
-- `.header-card` — accent-filled title card with `<h1>` and `<p class="byline">`
+- `.header-card` — accent-filled title card with `<h1>`
 - `.section` — white card with border, used for each content section
 - `h2` with `<span class="icon">` — emoji-anchored section heading
 - `h3` — accent-colored pill label for sub-sections
@@ -69,5 +69,4 @@ You will receive a `--- USER TASTES ---` message before the topic. Use it to tai
 ## Structure
 
 - `<h1>` must be the article title; it is used as the page title by the server
-- Byline is always `<p class="byline">PulseQ Daily Brief</p>` inside the `.header-card`
 - No links, no navigation, no footer — just the article. Do not include a Further Reading section.
