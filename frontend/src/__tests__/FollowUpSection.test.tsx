@@ -21,7 +21,7 @@ describe("FollowUpSection", () => {
   test("renders textarea with correct placeholder and generate button", async () => {
     renderSection();
     expect(screen.getByLabelText("Follow-up context")).toBeInTheDocument();
-    expect(screen.getByLabelText("Follow-up context")).toHaveAttribute("placeholder", "e.g. focus on the regulatory implications");
+
     expect(screen.getByRole("button", { name: "Generate Follow-up" })).toBeInTheDocument();
   });
 

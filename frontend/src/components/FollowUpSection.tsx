@@ -36,7 +36,7 @@ export default function FollowUpSection({ articleId }: Props) {
         <p className={styles.title}><span>🪝</span> Go Deeper</p>
         <textarea
           className={styles.input}
-          placeholder="e.g. focus on the regulatory implications"
+
           maxLength={MAX_CONTEXT_LENGTH}
           value={context}
           onChange={(e) => setContext(e.target.value)}
