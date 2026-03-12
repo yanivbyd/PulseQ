@@ -4,7 +4,6 @@ import os
 
 import boto3
 import openai
-from boto3.dynamodb.conditions import Key
 
 # In Lambda the bundle root contains sibling modules.
 # In tests writer/ is a package, so fall back to the submodule import.
@@ -18,58 +17,40 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def handler(event, context):
-    article_id = event.get("articleId")
-    user_id = event.get("userId")
-    if not article_id or not user_id:
-        logger.error("quiz-handler: missing articleId or userId in event")
-        raise ValueError("articleId and userId are required")
-
+def load_api_key() -> str:
     try:
-        api_key = get_openai_api_key()
+        return get_openai_api_key()
     except Exception as e:
         logger.error("quiz-handler: failed to retrieve secret: %s", e)
         raise
 
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-    ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
-    articles_table = ddb.Table(os.environ["ARTICLES_TABLE"])
 
+def load_article_html(articles_table, article_id: str) -> str:
     try:
-        result = articles_table.query(
-            IndexName="ById",
-            KeyConditionExpression=Key("id").eq(article_id),
-            Limit=1,
-        )
-        items = result.get("Items", [])
-        if not items:
+        result = articles_table.get_item(Key={"articleId": article_id})
+        item = result.get("Item")
+        if not item:
             raise ValueError(f"article not found: {article_id}")
-        item = items[0]
-        html = item["html"]
-        userid = item["userid"]
-        creation_timestamp = item["creation_timestamp"]
+        return item["html"]
     except Exception as e:
         logger.error("quiz-handler: failed to load article from DDB: %s", e)
         raise
 
+
+def load_quiz_prompt(s3, bucket: str, user_id: str) -> str:
     try:
-        shared_quiz = s3_get_text(
-            s3, os.environ["INPUT_BUCKET"], "shared/quiz_generation_instructions.txt"
-        )
-        user_quiz = s3_get_text(
-            s3, os.environ["INPUT_BUCKET"], f"{user_id}/quiz_user_tastes.txt"
-        )
-        quiz_prompt = shared_quiz + user_quiz
+        shared = s3_get_text(s3, bucket, "shared/quiz_generation_instructions.txt")
+        user = s3_get_text(s3, bucket, f"{user_id}/quiz_user_tastes.txt")
+        return shared + user
     except Exception as e:
         logger.error("quiz-handler: failed to load quiz prompt from S3: %s", e)
         raise
 
-    client = openai.OpenAI(api_key=api_key)
-    quiz = generate_quiz(client, html, quiz_prompt)
 
+def save_quiz(articles_table, article_id: str, quiz: list) -> None:
     try:
         articles_table.update_item(
-            Key={"userid": userid, "creation_timestamp": creation_timestamp},
+            Key={"articleId": article_id},
             UpdateExpression="SET quiz = :quiz",
             ExpressionAttributeValues={":quiz": json.dumps(quiz)},
         )
@@ -77,4 +58,25 @@ def handler(event, context):
         logger.error("quiz-handler: failed to update article quiz in DDB: %s", e)
         raise
 
-    return {"articleId": article_id, "userId": user_id}
+
+def handler(event, context):
+    article_id = event.get("articleId")
+    user_id = event.get("userId")
+    if not article_id or not user_id:
+        logger.error("quiz-handler: missing articleId or userId in event")
+        raise ValueError("articleId and userId are required")
+
+    api_key = load_api_key()
+
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
+    articles_table = ddb.Table(os.environ["ARTICLES_TABLE"])
+
+    html = load_article_html(articles_table, article_id)
+    quiz_prompt = load_quiz_prompt(s3, os.environ["INPUT_BUCKET"], user_id)
+
+    quiz = generate_quiz(openai.OpenAI(api_key=api_key), html, quiz_prompt)
+    save_quiz(articles_table, article_id, quiz)
+
+    article_title = event.get("articleTitle")
+    return {"articleId": article_id, "userId": user_id, "articleTitle": article_title}

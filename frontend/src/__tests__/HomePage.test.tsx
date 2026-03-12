@@ -13,8 +13,8 @@ vi.mock("../api", () => ({
 vi.stubEnv("VITE_USER_ID", "user1");
 
 const ARTICLES: api.ArticleSummary[] = [
-  { id: "a1", title: "Article One", accent: "#0d9488", creation_timestamp: "2026-03-05T09:00:00.000Z" },
-  { id: "a2", title: "Article Two", accent: "#0d9488", creation_timestamp: "2026-03-04T09:00:00.000Z" },
+  { articleId: "a1", title: "Article One", creation_timestamp: "2026-03-05T09:00:00.000Z" },
+  { articleId: "a2", title: "Article Two", creation_timestamp: "2026-03-04T09:00:00.000Z" },
 ];
 
 function renderHomePage() {

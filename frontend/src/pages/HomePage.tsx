@@ -71,9 +71,9 @@ export default function HomePage() {
         {articles.length === 0
           ? <li className={styles.empty}>Nothing new to read.</li>
           : articles.map((a) => (
-              <li key={a.id} className={styles.row}>
+              <li key={a.articleId} className={styles.row}>
                 <span className={styles.dot} aria-hidden="true" />
-                <Link to={`/${a.id}`} className={styles.title}>{a.title}</Link>
+                <Link to={`/${a.articleId}`} className={styles.title}>{a.title}</Link>
               </li>
             ))
         }

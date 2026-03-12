@@ -25,7 +25,7 @@ export default function ArticlePage() {
 
   function makeMeta(article: Article) {
     return {
-      articleId: article.id,
+      articleId: article.articleId,
       articleTitle: article.title,
       clientTimestamp: new Date().toISOString().replace(/:/g, "-"),
     };

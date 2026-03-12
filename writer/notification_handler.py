@@ -26,24 +26,14 @@ def _get_ifttt_key() -> str:
     return _ifttt_key
 
 
-def handler(event, context):
-    article_id = event.get("articleId")
-    user_id = event.get("userId")
-    article_title = event.get("articleTitle")
-    if not article_id or not user_id or not article_title:
-        logger.error("notification-handler: missing articleId, userId, or articleTitle in event")
-        raise ValueError("articleId, userId, and articleTitle are required")
-
-    web_base = os.environ["WEB_BASE_URL"]
-
-    # Warm up cache — fail-open: a warm-up failure does not abort notification
-    warm_url = f"{web_base}/api/article/{article_id}"
+def warm_up_cache(url: str) -> None:
     try:
-        urllib.request.urlopen(warm_url, timeout=10)
+        urllib.request.urlopen(url, timeout=10)
     except Exception as e:
         logger.warning("notification-handler: warm-up request failed: %s", e)
 
-    article_url = f"{web_base}/{article_id}"
+
+def send_ifttt_notification(article_url: str, article_title: str) -> None:
     try:
         key = _get_ifttt_key()
         endpoint = f"https://maker.ifttt.com/trigger/PulseQ/with/key/{key}"
@@ -55,5 +45,18 @@ def handler(event, context):
     except Exception as e:
         logger.error("notification-handler: failed to send IFTTT notification: %s", e)
         raise
+
+
+def handler(event, context):
+    article_id = event.get("articleId")
+    user_id = event.get("userId")
+    article_title = event.get("articleTitle")
+    if not article_id or not user_id or not article_title:
+        logger.error("notification-handler: missing articleId, userId, or articleTitle in event")
+        raise ValueError("articleId, userId, and articleTitle are required")
+
+    web_base = os.environ["WEB_BASE_URL"]
+    warm_up_cache(f"{web_base}/api/article/{article_id}")
+    send_ifttt_notification(f"{web_base}/{article_id}", article_title)
 
     return {}

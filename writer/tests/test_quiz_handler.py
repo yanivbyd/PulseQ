@@ -14,12 +14,11 @@ SAMPLE_HTML = '<div class="header-card"><h1>Load Balancers</h1></div>'
 SAMPLE_QUIZ = [{"q": "Q?", "options": ["A", "B", "C"], "answer": 0}]
 
 SAMPLE_ARTICLE_ITEM = {
-    "id": "abc12",
-    "userid": "user1",
+    "articleId": "river-cloud-delta-amber-forge-nine",
+    "userId": "user1",
     "creation_timestamp": "2026-03-11T08:00:00.000Z",
     "html": SAMPLE_HTML,
     "title": "Load Balancers",
-    "accent": "#0d9488",
 }
 
 
@@ -49,9 +48,9 @@ def _make_s3_client():
 def _make_articles_table(item=SAMPLE_ARTICLE_ITEM):
     table = MagicMock()
     if item is None:
-        table.query.return_value = {"Items": []}
+        table.get_item.return_value = {}
     else:
-        table.query.return_value = {"Items": [item]}
+        table.get_item.return_value = {"Item": item}
     return table
 
 
@@ -82,11 +81,14 @@ class TestQuizHandler:
         mock_boto_resource.return_value = ddb
 
         from writer.quiz_handler import handler
-        result = handler({"articleId": "abc12", "userId": "user1"}, None)
+        result = handler({"articleId": SAMPLE_ARTICLE_ITEM["articleId"], "userId": "user1", "articleTitle": "Load Balancers"}, None)
 
-        assert result == {"articleId": "abc12", "userId": "user1"}
+        assert result == {"articleId": SAMPLE_ARTICLE_ITEM["articleId"], "userId": "user1", "articleTitle": "Load Balancers"}
+        articles_table.get_item.assert_called_once_with(
+            Key={"articleId": SAMPLE_ARTICLE_ITEM["articleId"]}
+        )
         articles_table.update_item.assert_called_once_with(
-            Key={"userid": "user1", "creation_timestamp": SAMPLE_ARTICLE_ITEM["creation_timestamp"]},
+            Key={"articleId": SAMPLE_ARTICLE_ITEM["articleId"]},
             UpdateExpression="SET quiz = :quiz",
             ExpressionAttributeValues={":quiz": json.dumps(SAMPLE_QUIZ)},
         )
@@ -134,11 +136,11 @@ class TestQuizHandler:
     @patch("writer.quiz_handler.boto3.resource")
     @patch("writer.quiz_handler.boto3.client")
     @patch("writer.handler_utils.boto3.client")
-    def test_ddb_query_failure_raises(self, mock_utils_client, mock_boto_client, mock_boto_resource):
+    def test_ddb_get_failure_raises(self, mock_utils_client, mock_boto_client, mock_boto_resource):
         sm = _make_sm_client()
         s3 = _make_s3_client()
         at = MagicMock()
-        at.query.side_effect = Exception("DDB error")
+        at.get_item.side_effect = Exception("DDB error")
         ddb, _ = _make_ddb_resource(articles_table=at)
         mock_utils_client.return_value = sm
         mock_boto_client.return_value = s3

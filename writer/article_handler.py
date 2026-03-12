@@ -17,66 +17,68 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def handler(event, context):
-    user_id = event.get("userId")
-    if not user_id:
-        logger.error("article-handler: missing userId in event")
-        raise ValueError("userId is required")
-
+def load_api_key() -> str:
     try:
-        api_key = get_openai_api_key()
+        return get_openai_api_key()
     except Exception as e:
         logger.error("article-handler: failed to retrieve secret: %s", e)
         raise
 
-    os.environ["OPENAI_API_KEY"] = api_key
 
-    s3 = boto3.client("s3", region_name=AWS_REGION)
-    ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
-    topics_table = ddb.Table(os.environ["TOPICS_TABLE"])
-
+def load_instructions(s3, bucket: str) -> str:
     try:
-        article_instructions = s3_get_text(
-            s3, os.environ["INPUT_BUCKET"], "shared/article_generation_instructions.txt"
-        )
+        return s3_get_text(s3, bucket, "shared/article_generation_instructions.txt")
     except Exception as e:
         logger.error("article-handler: failed to load instructions from S3: %s", e)
         raise
 
+
+def pick_topic(topics_table, user_id: str) -> tuple[str, dict, list[dict]]:
     try:
         resp = topics_table.get_item(Key={"userId": user_id})
         topics: list[dict] = resp.get("Item", {}).get("topics", [])
         if not topics:
             raise ValueError("no topics found for user")
         chosen = random.choice(topics)
-        topic = f"{chosen['title']} — {chosen['description']}"
+        return f"{chosen['title']} — {chosen['description']}", chosen, topics
     except Exception as e:
         logger.error("article-handler: failed to load topics: %s", e)
         raise
 
+
+def write_article(topic: str, article_instructions: str) -> dict:
     try:
-        article = generate_article(topic=topic, article_instructions=article_instructions)
+        return generate_article(topic=topic, article_instructions=article_instructions)
     except Exception as e:
         logger.error("article-handler: generate_article failed: %s", e)
         raise
 
-    creation_timestamp = (
-        datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    )
-    articles_table = ddb.Table(os.environ["ARTICLES_TABLE"])
+
+def save_article(ddb, article_id: str, user_id: str, article: dict, creation_timestamp: str) -> None:
     try:
-        articles_table.put_item(Item={
-            "userid": user_id,
-            "creation_timestamp": creation_timestamp,
-            "id": article["id"],
+        ddb.Table(os.environ["ARTICLES_TABLE"]).put_item(Item={
+            "articleId": article_id,
+            "userId": user_id,
             "title": article["title"],
-            "accent": article["accent"],
             "html": article["html"],
+            "creation_timestamp": creation_timestamp,
+        })
+        ddb.Table(os.environ["USER_INBOX_TABLE"]).put_item(Item={
+            "userId": user_id,
+            "articleId": article_id,
+            "title": article["title"],
+            "creation_timestamp": creation_timestamp,
         })
     except Exception as e:
         logger.error("article-handler: failed to save article to DDB: %s", e)
         raise
 
+
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def consume_topic(topics_table, user_id: str, chosen: dict, topics: list[dict]) -> None:
     try:
         remaining = [t for t in topics if t["title"] != chosen["title"]]
         topics_table.update_item(
@@ -87,5 +89,26 @@ def handler(event, context):
         )
     except Exception as e:
         logger.warning("article-handler: failed to remove consumed topic: %s", e)
+
+
+def handler(event, context):
+    user_id = event.get("userId")
+    if not user_id:
+        logger.error("article-handler: missing userId in event")
+        raise ValueError("userId is required")
+
+    api_key = load_api_key()
+    os.environ["OPENAI_API_KEY"] = api_key
+
+    s3 = boto3.client("s3", region_name=AWS_REGION)
+    ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
+    topics_table = ddb.Table(os.environ["TOPICS_TABLE"])
+
+    article_instructions = load_instructions(s3, os.environ["INPUT_BUCKET"])
+    topic, chosen, topics = pick_topic(topics_table, user_id)
+    article = write_article(topic, article_instructions)
+
+    save_article(ddb, article["id"], user_id, article, now_utc_iso())
+    consume_topic(topics_table, user_id, chosen, topics)
 
     return {"articleId": article["id"], "userId": user_id, "articleTitle": article["title"]}

@@ -6,10 +6,8 @@ import * as api from "../src/api";
 vi.mock("../src/api");
 
 const ARTICLE = {
-  id: "abc12",
+  articleId: "abc12",
   title: "How Load Balancers Work",
-  accent: "#0d9488",
-  creation_timestamp: "2026-03-01T00:00:00.000Z",
   html: '<div class="header-card"><h1>How Load Balancers Work</h1></div>',
   quiz: [],
 };

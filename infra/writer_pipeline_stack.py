@@ -1,6 +1,8 @@
 from aws_cdk import (
     Duration,
+    RemovalPolicy,
     aws_lambda as _lambda,
+    aws_logs as logs,
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as tasks,
 )
@@ -68,12 +70,26 @@ def create_writer_pipeline(
         interval=Duration.seconds(1),
     )
 
+    log_group = logs.LogGroup(
+        scope,
+        "WriterStateMachineLogs",
+        log_group_name="/aws/states/WriterStateMachine",
+        retention=logs.RetentionDays.ONE_WEEK,
+        removal_policy=RemovalPolicy.DESTROY,
+    )
+
     return sfn.StateMachine(
         scope,
         "WriterStateMachine",
+        state_machine_name="article-generation",
         definition_body=sfn.DefinitionBody.from_chainable(
             article_state.next(quiz_state).next(notification_state).next(workflow_end)
         ),
         state_machine_type=sfn.StateMachineType.EXPRESS,
         timeout=Duration.minutes(5),
+        logs=sfn.LogOptions(
+            destination=log_group,
+            level=sfn.LogLevel.ALL,
+            include_execution_data=True,
+        ),
     )

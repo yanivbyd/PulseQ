@@ -8,11 +8,9 @@ export async function fetchTopics(userId: string): Promise<Topic[]> {
 }
 
 export interface ArticleSummary {
-  id: string;
+  articleId: string;
   title: string;
-  accent: string;
   creation_timestamp: string;
-  is_read?: boolean;
 }
 
 export interface QuizQuestion {
@@ -21,7 +19,9 @@ export interface QuizQuestion {
   answer: number;
 }
 
-export interface Article extends ArticleSummary {
+export interface Article {
+  articleId: string;
+  title: string;
   html: string;
   quiz: QuizQuestion[];
 }
@@ -58,16 +58,11 @@ export async function triggerScout(): Promise<void> {
   if (!res.ok) throw new Error(`Failed to refresh topics: ${res.status}`);
 }
 
-export async function postMarkRead(
-  userId: string,
-  articleId: string,
-  isRead: boolean,
-  idempotencyKey: string,
-): Promise<void> {
+export async function postMarkRead(userId: string, articleId: string, is_read: boolean, idempotencyKey: string): Promise<void> {
   const res = await fetch("/api/mark-read", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userId, articleId, is_read: isRead, idempotencyKey }),
+    body: JSON.stringify({ userId, articleId, is_read, idempotencyKey }),
   });
   if (!res.ok) throw new Error(`Failed to mark read: ${res.status}`);
 }

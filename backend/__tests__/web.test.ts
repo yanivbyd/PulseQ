@@ -1,5 +1,5 @@
 import { createHandler } from "../index";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, DeleteCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -29,34 +29,45 @@ function makeMockS3(shouldFail = false) {
 }
 
 function makeTopicsDdb(topics: Array<{ title: string; description: string }> | null | "error") {
-  const send = jest.fn().mockImplementation(() => {
+  const send = jest.fn().mockImplementation((cmd: unknown) => {
     if (topics === "error") return Promise.reject(new Error("DDB error"));
+    // Topics GetCommand
     const item = topics !== null ? { userId: "user1", topics } : undefined;
     return Promise.resolve({ Item: item });
   });
   return { send } as unknown as DynamoDBDocumentClient;
 }
 
-// Routes main-table queries to the matching userId bucket; searches all items for ById GSI queries.
-// UpdateCommand always succeeds unless opts.updateFails is true.
-function makeMockDdb(db: Record<string, Record<string, unknown>[]>, opts: { updateFails?: boolean } = {}) {
+// articles: articleId -> item (for GetCommand)
+// inbox: userId -> inbox items array (for QueryCommand)
+// DeleteCommand always succeeds unless opts.deleteFails is true.
+function makeMockDdb(
+  articles: Record<string, Record<string, unknown>>,
+  inbox: Record<string, Record<string, unknown>[]> = {},
+  opts: { deleteFails?: boolean } = {},
+) {
   const send = jest.fn().mockImplementation((cmd: unknown) => {
-    if (cmd instanceof UpdateCommand) {
-      return opts.updateFails
-        ? Promise.reject(new Error("DynamoDB update error"))
+    if (cmd instanceof DeleteCommand) {
+      return opts.deleteFails
+        ? Promise.reject(new Error("DynamoDB delete error"))
         : Promise.resolve({});
     }
-    const qCmd = cmd as QueryCommand;
-    const uid = qCmd.input.ExpressionAttributeValues?.[":uid"] as string | undefined;
-    const id  = qCmd.input.ExpressionAttributeValues?.[":id"]  as string | undefined;
-    if (uid !== undefined) {
-      return Promise.resolve({ Items: db[uid] ?? [] });
+    if (cmd instanceof GetCommand) {
+      const articleId = cmd.input.Key?.articleId as string | undefined;
+      if (articleId !== undefined) {
+        return Promise.resolve({ Item: articles[articleId] });
+      }
+      // Topics GetCommand (userId key)
+      return Promise.resolve({ Item: undefined });
     }
-    if (id !== undefined) {
-      const found = Object.values(db).flat().find((item) => item.id === id);
-      return Promise.resolve({ Items: found ? [found] : [] });
+    if (cmd instanceof QueryCommand) {
+      const uid = cmd.input.ExpressionAttributeValues?.[":uid"] as string | undefined;
+      if (uid !== undefined) {
+        return Promise.resolve({ Items: inbox[uid] ?? [] });
+      }
+      return Promise.resolve({ Items: [] });
     }
-    return Promise.resolve({ Items: [] });
+    return Promise.resolve({});
   });
   return { send } as unknown as DynamoDBDocumentClient;
 }
@@ -86,28 +97,38 @@ function makeMockSfn(shouldFail = false) {
 
 const SAMPLE_QUIZ = [{ q: "What is a load balancer?", options: ["A proxy", "A router", "A switch"], answer: 0 }];
 
+const SAMPLE_ARTICLE_ID = "river-cloud-delta-amber-forge-nine";
+
 const SAMPLE_ARTICLE = {
-  id: "abc12",
+  articleId: SAMPLE_ARTICLE_ID,
+  userId: "user1",
   title: "How Load Balancers Work",
-  accent: "#0d9488",
   creation_timestamp: "2026-03-03T14:00:00.000Z",
-  userid: "user1",
   html: '<div class="header-card"><h1>How Load Balancers Work</h1></div>',
   quiz: JSON.stringify(SAMPLE_QUIZ),
 };
 
-const SAMPLE_ARTICLE_2 = {
-  id: "xyz99",
-  title: "Docker Internals",
-  accent: "#7c3aed",
-  creation_timestamp: "2026-03-02T10:00:00.000Z",
-  userid: "userX",
-  html: '<div class="header-card"><h1>Docker Internals</h1></div>',
+const SAMPLE_INBOX_ITEM = {
+  userId: "user1",
+  articleId: SAMPLE_ARTICLE_ID,
+  title: "How Load Balancers Work",
+  creation_timestamp: "2026-03-03T14:00:00.000Z",
 };
 
-const MOCK_DB: Record<string, Record<string, unknown>[]> = {
-  user1: [SAMPLE_ARTICLE],
-  userX: [SAMPLE_ARTICLE_2],
+const SAMPLE_INBOX_ITEM_2 = {
+  userId: "userX",
+  articleId: "oak-frost-veil-surge-lens-coral",
+  title: "Docker Internals",
+  creation_timestamp: "2026-03-02T10:00:00.000Z",
+};
+
+const MOCK_ARTICLES: Record<string, Record<string, unknown>> = {
+  [SAMPLE_ARTICLE_ID]: SAMPLE_ARTICLE,
+};
+
+const MOCK_INBOX: Record<string, Record<string, unknown>[]> = {
+  user1: [SAMPLE_INBOX_ITEM],
+  userX: [SAMPLE_INBOX_ITEM_2],
 };
 
 const mockLambda = makeMockLambda();
@@ -122,6 +143,7 @@ describe("GET /api/topics", () => {
 
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
     process.env.TOPICS_TABLE = "pulseq-topics";
   });
   afterEach(() => { delete process.env.TOPICS_TABLE; });
@@ -181,55 +203,49 @@ describe("GET /api/topics", () => {
 });
 
 describe("GET /api/article-summaries", () => {
-  beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
+  beforeEach(() => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
+  });
 
-  test("returns 200 JSON for user1", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
+  test("returns 200 JSON for user1 from inbox table", async () => {
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
-    expect(result.headers!["Content-Type"]).toBe("application/json");
     const body = JSON.parse(result.body as string);
     expect(body).toHaveLength(1);
-    expect(body[0]).toMatchObject({ id: "abc12", title: "How Load Balancers Work" });
+    expect(body[0]).toMatchObject({ articleId: SAMPLE_ARTICLE_ID, title: "How Load Balancers Work" });
   });
 
-  test("returns only userX's articles, not user1's", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
+  test("returns only userX's inbox items", async () => {
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "userX" }),
     ) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body as string);
     expect(body).toHaveLength(1);
-    expect(body[0]).toMatchObject({ id: "xyz99", title: "Docker Internals" });
+    expect(body[0]).toMatchObject({ articleId: "oak-frost-veil-surge-lens-coral", title: "Docker Internals" });
   });
 
   test("returns 400 when userId is not provided", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
     expect(JSON.parse(result.body as string)).toMatchObject({ error: expect.stringContaining("userId") });
   });
 
-  test("queries with ProjectionExpression that excludes html and includes is_read", async () => {
-    const ddb = makeMockDdb(MOCK_DB);
+  test("queries USER_INBOX_TABLE with userId key (no filter expression)", async () => {
+    const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX);
     await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
     const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
-    expect(cmd.input.ProjectionExpression).toBeDefined();
-    expect(cmd.input.ProjectionExpression).not.toContain("html");
-    expect(cmd.input.ProjectionExpression).toContain("is_read");
-  });
-
-  test("applies FilterExpression to exclude read articles", async () => {
-    const ddb = makeMockDdb(MOCK_DB);
-    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
-    const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
-    expect(cmd.input.FilterExpression).toBe("attribute_not_exists(is_read) OR is_read = :is_read");
-    expect(cmd.input.ExpressionAttributeValues).toMatchObject({ ":is_read": false });
+    expect(cmd.input.TableName).toBe("pulseq-user-inbox");
+    expect(cmd.input.KeyConditionExpression).toContain("userId");
+    expect(cmd.input.FilterExpression).toBeUndefined();
   });
 
   test("returns empty array for unknown userId", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "nobody" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(JSON.parse(result.body as string)).toEqual([]);
@@ -243,28 +259,29 @@ describe("GET /api/article-summaries", () => {
 });
 
 describe("GET /api/article/:articleId", () => {
-  beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
+  beforeEach(() => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
+  });
 
-  test("returns full article JSON including parsed quiz array", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/article/abc12"),
+  test("returns full article JSON including parsed quiz array via GetItem", async () => {
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
-    expect(result.headers!["Content-Type"]).toBe("application/json");
     const body = JSON.parse(result.body as string);
-    expect(body.id).toBe("abc12");
+    expect(body.articleId).toBe(SAMPLE_ARTICLE_ID);
     expect(body.title).toBe("How Load Balancers Work");
     expect(body.html).toBe(SAMPLE_ARTICLE.html);
     expect(body.quiz).toEqual(SAMPLE_QUIZ);
-    expect(body.userid).toBeUndefined(); // internal field not exposed
+    expect(body.userId).toBeUndefined(); // internal field not exposed
   });
 
   test("returns quiz: [] when DDB quiz field is absent", async () => {
     const articleWithoutQuiz = { ...SAMPLE_ARTICLE } as Record<string, unknown>;
     delete articleWithoutQuiz.quiz;
-    const db = { user1: [articleWithoutQuiz] };
-    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/article/abc12"),
+    const result = await createHandler(makeMockDdb({ [SAMPLE_ARTICLE_ID]: articleWithoutQuiz }, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body as string).quiz).toEqual([]);
@@ -273,9 +290,8 @@ describe("GET /api/article/:articleId", () => {
   test("returns quiz: [] and warns when DDB quiz field contains invalid JSON", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const articleBadQuiz = { ...SAMPLE_ARTICLE, quiz: "not valid json" };
-    const db = { user1: [articleBadQuiz] };
-    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/article/abc12"),
+    const result = await createHandler(makeMockDdb({ [SAMPLE_ARTICLE_ID]: articleBadQuiz }, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body as string).quiz).toEqual([]);
@@ -283,17 +299,18 @@ describe("GET /api/article/:articleId", () => {
     warnSpy.mockRestore();
   });
 
-  test("queries ById GSI with the articleId", async () => {
-    const ddb = makeMockDdb(MOCK_DB);
-    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article/abc12"));
-    const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
-    expect(cmd.input.IndexName).toBe("ById");
-    expect(cmd.input.ExpressionAttributeValues).toMatchObject({ ":id": "abc12" });
+  test("uses GetCommand (not QueryCommand) with articleId key", async () => {
+    const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX);
+    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`));
+    const cmd = (ddb.send as jest.Mock).mock.calls[0][0];
+    expect(cmd).toBeInstanceOf(GetCommand);
+    expect((cmd as GetCommand).input.Key).toEqual({ articleId: SAMPLE_ARTICLE_ID });
+    expect((cmd as GetCommand).input.TableName).toBe("pulseq-articles");
   });
 
   test("returns 404 when article not found", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article/missing"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
@@ -303,13 +320,16 @@ describe("GET /api/article/:articleId", () => {
 
   test("propagates DynamoDB errors", async () => {
     await expect(
-      createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article/abc12")),
+      createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`)),
     ).rejects.toThrow();
   });
 });
 
 describe("unknown paths", () => {
-  beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
+  beforeEach(() => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
+  });
 
   test("returns 404 JSON for unknown routes", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -324,15 +344,25 @@ describe("unknown paths", () => {
 describe("environment", () => {
   test("throws if ARTICLES_TABLE env var is not set", async () => {
     delete process.env.ARTICLES_TABLE;
+    delete process.env.USER_INBOX_TABLE;
     await expect(
       createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
     ).rejects.toThrow("ARTICLES_TABLE");
+  });
+
+  test("throws if USER_INBOX_TABLE env var is not set", async () => {
+    process.env.ARTICLES_TABLE = "pulseq-articles";
+    delete process.env.USER_INBOX_TABLE;
+    await expect(
+      createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
+    ).rejects.toThrow("USER_INBOX_TABLE");
   });
 });
 
 describe("POST /api/generate", () => {
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
     process.env.WRITER_STATE_MACHINE_ARN = "arn:aws:states:eu-west-1:123456789012:stateMachine:WriterSM";
   });
   afterEach(() => { delete process.env.WRITER_STATE_MACHINE_ARN; });
@@ -393,6 +423,7 @@ describe("POST /api/generate", () => {
 describe("POST /api/scout", () => {
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
     process.env.SCOUT_FUNCTION_ARN = "arn:aws:lambda:eu-west-1:123456789:function:ScoutFunction";
   });
   afterEach(() => { delete process.env.SCOUT_FUNCTION_ARN; });
@@ -451,13 +482,12 @@ describe("POST /api/feedback", () => {
   const BUCKET = "pulseq-events";
 
   function validTimestamp() {
-    // Sanitised ISO 8601: colons replaced by hyphens in the time part
     return new Date().toISOString().replace(/:/g, "-");
   }
 
   function validBody(overrides: Record<string, unknown> = {}) {
     return JSON.stringify({
-      articleId: "abc12",
+      articleId: SAMPLE_ARTICLE_ID,
       articleTitle: "How Load Balancers Work",
       userId: "user1",
       content: { type: "reaction", reaction: "like" },
@@ -469,6 +499,7 @@ describe("POST /api/feedback", () => {
   let warnSpy: jest.SpyInstance;
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
     process.env.EVENTS_BUCKET = BUCKET;
     warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -479,17 +510,17 @@ describe("POST /api/feedback", () => {
     const ts = validTimestamp();
     const result = await createHandler(makeMockDdb({}), mockLambda, s3, mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
-        articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
+        articleId: SAMPLE_ARTICLE_ID, articleTitle: "How Load Balancers Work", userId: "user1",
         content: { type: "reaction", reaction: "like" }, clientTimestamp: ts,
       })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     const cmd = (s3.send as jest.Mock).mock.calls[0][0] as PutObjectCommand;
     expect(cmd.input.Bucket).toBe(BUCKET);
-    expect(cmd.input.Key).toBe(`user1/${ts}_article_abc12_feedback.json`);
+    expect(cmd.input.Key).toBe(`user1/${ts}_article_${SAMPLE_ARTICLE_ID}_feedback.json`);
     expect(cmd.input.ContentType).toBe("application/json");
     const written = JSON.parse(cmd.input.Body as string);
-    expect(written).toMatchObject({ articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1", clientTimestamp: ts });
+    expect(written).toMatchObject({ articleId: SAMPLE_ARTICLE_ID, articleTitle: "How Load Balancers Work", userId: "user1", clientTimestamp: ts });
     expect(written.content).toEqual({ type: "reaction", reaction: "like" });
   });
 
@@ -498,7 +529,7 @@ describe("POST /api/feedback", () => {
     const ts = validTimestamp();
     const result = await createHandler(makeMockDdb({}), mockLambda, s3, mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
-        articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
+        articleId: SAMPLE_ARTICLE_ID, articleTitle: "How Load Balancers Work", userId: "user1",
         content: { type: "freeText", text: "Great explanation of CRDTs" }, clientTimestamp: ts,
       })),
     ) as APIGatewayProxyStructuredResultV2;
@@ -602,32 +633,32 @@ describe("POST /api/feedback", () => {
     errorSpy.mockRestore();
   });
 
-  test("marks article as read for both reaction and freeText events", async () => {
+  test("removes article from inbox (DeleteItem) for both reaction and freeText events", async () => {
     const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
     for (const content of [{ type: "reaction", reaction: "like" }, { type: "freeText", text: "nice" }]) {
-      const ddb = makeMockDdb(MOCK_DB);
+      const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX);
       const result = await createHandler(ddb, mockLambda, makeMockS3(), mockSfn)(
         makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content })),
       ) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
       const calls = (ddb.send as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
-      const updateCall = calls.find((c: unknown) => c instanceof UpdateCommand) as UpdateCommand | undefined;
-      expect(updateCall).toBeDefined();
-      expect(updateCall!.input.Key).toMatchObject({ userid: "user1", creation_timestamp: SAMPLE_ARTICLE.creation_timestamp });
-      expect(updateCall!.input.UpdateExpression).toBe("SET is_read = :true");
+      const deleteCall = calls.find((c: unknown) => c instanceof DeleteCommand) as DeleteCommand | undefined;
+      expect(deleteCall).toBeDefined();
+      expect(deleteCall!.input.Key).toEqual({ userId: "user1", articleId: SAMPLE_ARTICLE_ID });
+      expect(deleteCall!.input.TableName).toBe("pulseq-user-inbox");
     }
     expect(infoSpy).toHaveBeenCalled();
     infoSpy.mockRestore();
   });
 
-  test("returns 200 and warns when DynamoDB auto-mark-read fails", async () => {
+  test("returns 200 and warns when inbox DeleteItem fails (fail-open)", async () => {
     const warnSpy2 = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const ddb = makeMockDdb(MOCK_DB, { updateFails: true });
+    const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX, { deleteFails: true });
     const result = await createHandler(ddb, mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
-    expect(warnSpy2).toHaveBeenCalledWith(expect.stringContaining("failed to mark article"), expect.any(Error));
+    expect(warnSpy2).toHaveBeenCalledWith(expect.stringContaining("failed to remove article"), expect.any(Error));
     warnSpy2.mockRestore();
   });
 });
@@ -636,9 +667,7 @@ describe("POST /api/mark-read", () => {
   function validMarkReadBody(overrides: Record<string, unknown> = {}) {
     return JSON.stringify({
       userId: "user1",
-      articleId: "abc12",
-      is_read: true,
-      idempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
+      articleId: SAMPLE_ARTICLE_ID,
       ...overrides,
     });
   }
@@ -646,45 +675,26 @@ describe("POST /api/mark-read", () => {
   let errorSpy: jest.SpyInstance;
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
+    process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
     errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
   afterEach(() => { errorSpy.mockRestore(); });
 
-  test("marks article as read and returns 200", async () => {
+  test("deletes item from user inbox and returns 200", async () => {
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
-    const ddb = makeMockDdb(MOCK_DB);
+    const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX);
     const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
     expect(JSON.parse(result.body as string)).toEqual({});
     const calls = (ddb.send as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
-    const updateCall = calls.find((c: unknown) => c instanceof UpdateCommand) as UpdateCommand;
-    expect(updateCall.input.Key).toMatchObject({ userid: "user1", creation_timestamp: SAMPLE_ARTICLE.creation_timestamp });
-    expect(updateCall.input.UpdateExpression).toBe("SET is_read = :is_read");
-    expect(updateCall.input.ExpressionAttributeValues).toEqual({ ":is_read": true });
+    const deleteCall = calls.find((c: unknown) => c instanceof DeleteCommand) as DeleteCommand;
+    expect(deleteCall).toBeDefined();
+    expect(deleteCall.input.TableName).toBe("pulseq-user-inbox");
+    expect(deleteCall.input.Key).toEqual({ userId: "user1", articleId: SAMPLE_ARTICLE_ID });
     expect(logSpy).toHaveBeenCalled();
     logSpy.mockRestore();
-  });
-
-  test("marks article as unread (is_read: false) and returns 200", async () => {
-    const ddb = makeMockDdb(MOCK_DB);
-    const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ is_read: false })),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(200);
-    const calls = (ddb.send as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
-    const updateCall = calls.find((c: unknown) => c instanceof UpdateCommand) as UpdateCommand;
-    expect(updateCall.input.ExpressionAttributeValues).toEqual({ ":is_read": false });
-  });
-
-  test("returns 404 when article not found", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ articleId: "missing" })),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(404);
-    expect(JSON.parse(result.body as string).error).toMatch(/not found/i);
-    expect(errorSpy).toHaveBeenCalled();
   });
 
   test("returns 400 for invalid JSON body", async () => {
@@ -712,37 +722,12 @@ describe("POST /api/mark-read", () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("articleId"));
   });
 
-  test("returns 400 when is_read is not a boolean (string 'true')", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ is_read: "true" })),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(400);
-    expect(JSON.parse(result.body as string).error).toMatch(/boolean/);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("is_read"));
-  });
-
-  test("returns 400 for missing idempotencyKey", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ idempotencyKey: "" })),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(400);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("idempotencyKey"));
-  });
-
-  test("returns 500 when GSI query fails", async () => {
-    const result = await createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(
-      makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
-    ) as APIGatewayProxyStructuredResultV2;
-    expect(result.statusCode).toBe(500);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("GSI query failed"), expect.any(Error));
-  });
-
-  test("returns 500 when UpdateItem fails", async () => {
-    const ddb = makeMockDdb(MOCK_DB, { updateFails: true });
+  test("returns 500 when DeleteItem fails", async () => {
+    const ddb = makeMockDdb(MOCK_ARTICLES, MOCK_INBOX, { deleteFails: true });
     const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("UpdateItem failed"), expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("DeleteItem failed"), expect.any(Error));
   });
 });

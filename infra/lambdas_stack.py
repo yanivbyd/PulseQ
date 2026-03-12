@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from aws_cdk import (
     BundlingOptions,
     Duration,
-    aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_lambda_nodejs as nodejs,
@@ -11,6 +10,8 @@ from aws_cdk import (
     aws_secretsmanager as sm,
 )
 from constructs import Construct
+
+from ddb_stack import Tables
 
 
 @dataclass
@@ -27,8 +28,7 @@ def create_lambdas(
     scope: Construct,
     input_bucket: s3.IBucket,
     events_bucket: s3.IBucket,
-    articles_table: dynamodb.ITable,
-    topics_table: dynamodb.ITable,
+    ddb_tables: Tables,
     secret: sm.ISecret,
     ifttt_secret: sm.ISecret,
 ) -> Lambdas:
@@ -53,14 +53,16 @@ def create_lambdas(
         environment={
             "INPUT_BUCKET": input_bucket.bucket_name,
             "SECRET_NAME": secret.secret_name,
-            "ARTICLES_TABLE": articles_table.table_name,
-            "TOPICS_TABLE": topics_table.table_name,
+            "ARTICLES_TABLE": ddb_tables.articles_table.table_name,
+            "USER_INBOX_TABLE": ddb_tables.user_inbox_table.table_name,
+            "TOPICS_TABLE": ddb_tables.topics_table.table_name,
         },
     )
     input_bucket.grant_read(article_fn)
     secret.grant_read(article_fn)
-    articles_table.grant(article_fn, "dynamodb:PutItem")
-    topics_table.grant_read_write_data(article_fn)
+    ddb_tables.articles_table.grant(article_fn, "dynamodb:PutItem")
+    ddb_tables.user_inbox_table.grant(article_fn, "dynamodb:PutItem")
+    ddb_tables.topics_table.grant_read_write_data(article_fn)
 
     quiz_fn = _lambda.Function(
         scope,
@@ -73,12 +75,12 @@ def create_lambdas(
         environment={
             "INPUT_BUCKET": input_bucket.bucket_name,
             "SECRET_NAME": secret.secret_name,
-            "ARTICLES_TABLE": articles_table.table_name,
+            "ARTICLES_TABLE": ddb_tables.articles_table.table_name,
         },
     )
     input_bucket.grant_read(quiz_fn)
     secret.grant_read(quiz_fn)
-    articles_table.grant(quiz_fn, "dynamodb:Query", "dynamodb:UpdateItem")
+    ddb_tables.articles_table.grant(quiz_fn, "dynamodb:GetItem", "dynamodb:UpdateItem")
 
     notification_fn = _lambda.Function(
         scope,
@@ -90,11 +92,9 @@ def create_lambdas(
         timeout=Duration.minutes(15),
         environment={
             "IFTTT_SECRET_NAME": ifttt_secret.secret_name,
-            "ARTICLES_TABLE": articles_table.table_name,
         },
     )
     ifttt_secret.grant_read(notification_fn)
-    articles_table.grant(notification_fn, "dynamodb:Query")
 
     # ── Scout Lambda ─────────────────────────────────────────────────────────
     scout_fn = _lambda.Function(
@@ -109,13 +109,13 @@ def create_lambdas(
             "INPUT_BUCKET": input_bucket.bucket_name,
             "EVENTS_BUCKET": events_bucket.bucket_name,
             "SECRET_NAME": secret.secret_name,
-            "TOPICS_TABLE": topics_table.table_name,
+            "TOPICS_TABLE": ddb_tables.topics_table.table_name,
         },
     )
     input_bucket.grant_read(scout_fn)
     events_bucket.grant_read(scout_fn)
     secret.grant_read(scout_fn)
-    topics_table.grant_read_write_data(scout_fn)
+    ddb_tables.topics_table.grant_read_write_data(scout_fn)
 
     # ── Backend Lambda (Node.js) ──────────────────────────────────────────────
     web_fn = nodejs.NodejsFunction(
@@ -127,15 +127,17 @@ def create_lambdas(
         architecture=_lambda.Architecture.ARM_64,
         timeout=Duration.seconds(10),
         environment={
-            "ARTICLES_TABLE": articles_table.table_name,
-            "TOPICS_TABLE": topics_table.table_name,
+            "ARTICLES_TABLE": ddb_tables.articles_table.table_name,
+            "USER_INBOX_TABLE": ddb_tables.user_inbox_table.table_name,
+            "TOPICS_TABLE": ddb_tables.topics_table.table_name,
         },
         bundling=nodejs.BundlingOptions(
             external_modules=["@aws-sdk/*"],
         ),
     )
-    articles_table.grant(web_fn, "dynamodb:Query", "dynamodb:UpdateItem")
-    topics_table.grant_read_data(web_fn)
+    ddb_tables.articles_table.grant(web_fn, "dynamodb:GetItem")
+    ddb_tables.user_inbox_table.grant(web_fn, "dynamodb:Query", "dynamodb:DeleteItem")
+    ddb_tables.topics_table.grant_read_data(web_fn)
     scout_fn.grant_invoke(web_fn)
     events_bucket.grant_put(web_fn)
     web_fn.add_environment("SCOUT_FUNCTION_ARN", scout_fn.function_arn)

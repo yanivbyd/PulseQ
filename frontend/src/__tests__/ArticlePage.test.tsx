@@ -11,10 +11,8 @@ vi.mock("../api", () => ({
 }));
 
 const ARTICLE = {
-  id: "abc12",
+  articleId: "abc12",
   title: "Test Article",
-  accent: "#0d9488",
-  creation_timestamp: "2026-03-05T08:00:00.000Z",
   html: "<p>Hello world</p>",
   quiz: [],
 };

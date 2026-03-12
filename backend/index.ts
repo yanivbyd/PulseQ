@@ -1,5 +1,5 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, DeleteCommand, GetCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -14,9 +14,15 @@ function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructu
 }
 
 export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: LambdaClient, s3Client: S3Client, sfnClient: SFNClient) {
-  const tableName = () => {
+  const articlesTable = () => {
     const t = process.env.ARTICLES_TABLE;
     if (!t) throw new Error("ARTICLES_TABLE environment variable is not set");
+    return t;
+  };
+
+  const inboxTable = () => {
+    const t = process.env.USER_INBOX_TABLE;
+    if (!t) throw new Error("USER_INBOX_TABLE environment variable is not set");
     return t;
   };
 
@@ -86,43 +92,37 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
   async function handleArticleSummaries(userId: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {
     if (!userId) return jsonResponse(400, { error: "userId query parameter is required" });
     const result = await ddbClient.send(new QueryCommand({
-      TableName: tableName(),
-      KeyConditionExpression: "userid = :uid",
-      FilterExpression: "attribute_not_exists(is_read) OR is_read = :is_read",
-      ExpressionAttributeValues: { ":uid": userId, ":is_read": false },
+      TableName: inboxTable(),
+      KeyConditionExpression: "userId = :uid",
+      ExpressionAttributeValues: { ":uid": userId },
       ScanIndexForward: false,
-      Limit: 30,
-      ProjectionExpression: "id, title, accent, creation_timestamp, is_read",
     }));
     return jsonResponse(200, result.Items ?? []);
   }
 
   async function handleArticle(articleId: string): Promise<APIGatewayProxyStructuredResultV2> {
-    const result = await ddbClient.send(new QueryCommand({
-      TableName: tableName(),
-      IndexName: "ById",
-      KeyConditionExpression: "id = :id",
-      ExpressionAttributeValues: { ":id": articleId },
-      Limit: 1,
+    const result = await ddbClient.send(new GetCommand({
+      TableName: articlesTable(),
+      Key: { articleId },
     }));
 
-    if (!result.Items || result.Items.length === 0) {
+    if (!result.Item) {
       console.warn(`article: not found: ${articleId}`);
       return jsonResponse(404, { error: "Not Found" });
     }
 
-    const item = result.Items[0];
+    const item = result.Item;
     let quiz: unknown[] = [];
     if (typeof item.quiz === "string") {
       try {
         const parsed = JSON.parse(item.quiz);
         if (Array.isArray(parsed)) quiz = parsed;
-        else console.warn(`article: quiz field is not an array for id=${articleId}`);
+        else console.warn(`article: quiz field is not an array for articleId=${articleId}`);
       } catch {
-        console.warn(`article: invalid quiz JSON for id=${articleId}`);
+        console.warn(`article: invalid quiz JSON for articleId=${articleId}`);
       }
     }
-    return jsonResponse(200, { id: item.id, title: item.title, accent: item.accent, html: item.html, quiz });
+    return jsonResponse(200, { articleId: item.articleId, title: item.title, html: item.html, quiz });
   }
 
   async function handleMarkRead(body: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {
@@ -132,7 +132,7 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(400, { error: "Invalid JSON body" });
     }
 
-    const { userId, articleId, is_read, idempotencyKey } = parsed as Record<string, unknown>;
+    const { userId, articleId } = parsed as Record<string, unknown>;
     if (!userId || typeof userId !== "string") {
       console.error(`mark-read: invalid userId: ${JSON.stringify(userId)}`);
       return jsonResponse(400, { error: "userId is required" });
@@ -141,47 +141,18 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       console.error(`mark-read: invalid articleId: ${JSON.stringify(articleId)}`);
       return jsonResponse(400, { error: "articleId is required" });
     }
-    if (typeof is_read !== "boolean") {
-      console.error(`mark-read: invalid is_read: ${JSON.stringify(is_read)}`);
-      return jsonResponse(400, { error: "is_read must be a boolean" });
-    }
-    if (!idempotencyKey || typeof idempotencyKey !== "string") {
-      console.error(`mark-read: invalid idempotencyKey: ${JSON.stringify(idempotencyKey)}`);
-      return jsonResponse(400, { error: "idempotencyKey is required" });
-    }
-
-    let articleItem: Record<string, unknown>;
-    try {
-      const gsiResult = await ddbClient.send(new QueryCommand({
-        TableName: tableName(),
-        IndexName: "ById",
-        KeyConditionExpression: "id = :id",
-        ExpressionAttributeValues: { ":id": articleId },
-        Limit: 1,
-      }));
-      if (!gsiResult.Items || gsiResult.Items.length === 0) {
-        console.error(`mark-read: article not found: ${articleId}`);
-        return jsonResponse(404, { error: "Article not found" });
-      }
-      articleItem = gsiResult.Items[0];
-    } catch (err) {
-      console.error(`mark-read: GSI query failed for articleId=${articleId}:`, err);
-      return jsonResponse(500, { error: "Failed to look up article" });
-    }
 
     try {
-      await ddbClient.send(new UpdateCommand({
-        TableName: tableName(),
-        Key: { userid: articleItem.userid, creation_timestamp: articleItem.creation_timestamp },
-        UpdateExpression: "SET is_read = :is_read",
-        ExpressionAttributeValues: { ":is_read": is_read },
+      await ddbClient.send(new DeleteCommand({
+        TableName: inboxTable(),
+        Key: { userId, articleId },
       }));
     } catch (err) {
-      console.error(`mark-read: UpdateItem failed for articleId=${articleId}:`, err);
-      return jsonResponse(500, { error: "Failed to update article" });
+      console.error(`mark-read: DeleteItem failed for articleId=${articleId}:`, err);
+      return jsonResponse(500, { error: "Failed to mark article as read" });
     }
 
-    console.log(`mark-read: set articleId=${articleId} is_read=${is_read} for userId=${userId}`);
+    console.log(`mark-read: deleted articleId=${articleId} from inbox for userId=${userId}`);
     return jsonResponse(200, {});
   }
 
@@ -283,38 +254,23 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       return jsonResponse(500, { error: "Failed to write feedback" });
     }
 
-    async function markArticleRead(id: string) {
-      const gsiResult = await ddbClient.send(new QueryCommand({
-        TableName: tableName(),
-        IndexName: "ById",
-        KeyConditionExpression: "id = :id",
-        ExpressionAttributeValues: { ":id": id },
-        Limit: 1,
-      }));
-      if (gsiResult.Items && gsiResult.Items.length > 0) {
-        const item = gsiResult.Items[0];
-        await ddbClient.send(new UpdateCommand({
-          TableName: tableName(),
-          Key: { userid: item.userid, creation_timestamp: item.creation_timestamp },
-          UpdateExpression: "SET is_read = :true",
-          ExpressionAttributeValues: { ":true": true },
-        }));
-        console.info(`feedback: marked article ${id} as read`);
-      }
-    }
-
-    // Best-effort: mark article as read after any feedback
+    // Best-effort: remove article from inbox after any feedback
     try {
-      await markArticleRead(articleId);
+      await ddbClient.send(new DeleteCommand({
+        TableName: inboxTable(),
+        Key: { userId: userId as string, articleId: articleId as string },
+      }));
+      console.info(`feedback: removed articleId=${articleId} from inbox for userId=${userId}`);
     } catch (err) {
-      console.warn(`feedback: failed to mark article ${articleId} as read:`, err);
+      console.warn(`feedback: failed to remove article ${articleId} from inbox:`, err);
     }
 
     return jsonResponse(200, {});
   }
 
   return async function (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
-    tableName(); // validate env var eagerly
+    articlesTable(); // validate env var eagerly
+    inboxTable();    // validate env var eagerly
 
     const path = event.rawPath ?? "";
     const method = event.requestContext?.http?.method;

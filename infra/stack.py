@@ -8,7 +8,6 @@ from aws_cdk import (
     aws_apigatewayv2_integrations as integrations,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as cf_origins,
-    aws_dynamodb as dynamodb,
     aws_iam as iam,
     aws_s3 as s3,
     aws_scheduler as scheduler,
@@ -16,6 +15,7 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from ddb_stack import create_ddb_tables
 from lambdas_stack import create_lambdas
 from writer_pipeline_stack import create_writer_pipeline
 
@@ -41,31 +41,8 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # ── DynamoDB: topics ─────────────────────────────────────────────────
-        topics_table = dynamodb.Table(
-            self,
-            "TopicsTable",
-            table_name="pulseq-topics",
-            partition_key=dynamodb.Attribute(name="userId", type=dynamodb.AttributeType.STRING),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.RETAIN,
-        )
-
-        # ── DynamoDB: articles ───────────────────────────────────────────────
-        articles_table = dynamodb.Table(
-            self,
-            "ArticlesTable",
-            table_name="pulseq-articles",
-            partition_key=dynamodb.Attribute(name="userid", type=dynamodb.AttributeType.STRING),
-            sort_key=dynamodb.Attribute(name="creation_timestamp", type=dynamodb.AttributeType.STRING),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.RETAIN,
-        )
-        articles_table.add_global_secondary_index(
-            index_name="ById",
-            partition_key=dynamodb.Attribute(name="id", type=dynamodb.AttributeType.STRING),
-            projection_type=dynamodb.ProjectionType.ALL,
-        )
+        # ── DynamoDB tables ──────────────────────────────────────────────────
+        ddb_tables = create_ddb_tables(self)
 
         # ── Secrets Manager ─────────────────────────────────────────────────
         secret = sm.Secret(
@@ -95,8 +72,7 @@ class WriterStack(Stack):
             self,
             input_bucket=input_bucket,
             events_bucket=events_bucket,
-            articles_table=articles_table,
-            topics_table=topics_table,
+            ddb_tables=ddb_tables,
             secret=secret,
             ifttt_secret=ifttt_secret,
         )
