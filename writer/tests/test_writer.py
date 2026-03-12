@@ -3,7 +3,7 @@ import pytest
 import openai
 from unittest.mock import patch, MagicMock
 
-from writer.writer import generate_short_id, generate_quiz, run, strip_markdown_fences
+from writer.writer import generate_short_id, generate_quiz, generate_article, strip_markdown_fences
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -21,12 +21,11 @@ QUIZ_PARSED = [{"q": "What protocol?", "options": ["QUIC", "TCP", "WebRTC"], "an
 
 @pytest.fixture
 def mock_openai():
-    """Return a mock OpenAI client whose first call returns HTML, second returns quiz JSON."""
+    """Return a mock OpenAI client whose first call returns HTML."""
     mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = [
-        MagicMock(choices=[MagicMock(message=MagicMock(content=HTML_FRAGMENT))]),
-        MagicMock(choices=[MagicMock(message=MagicMock(content=QUIZ_JSON))]),
-    ]
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content=HTML_FRAGMENT))]
+    )
     return mock_client
 
 
@@ -124,30 +123,28 @@ def test_generate_quiz_validation_failures_fall_back_to_empty(caplog):
         assert any(r.levelno == logging.WARNING for r in caplog.records), f"expected warning for: {bad_content!r}"
 
 
-# ── run() ────────────────────────────────────────────────────────────────────
+# ── generate_article() ───────────────────────────────────────────────────────
 
 def test_happy_path(mock_openai):
-    """run() returns a dict with id, html, title, accent, and quiz."""
+    """generate_article() returns a dict with id, html, title, and accent (no quiz)."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = run(topic="N+1 Queries — Detection patterns.",
-                     article_instructions="Style instructions.",
-                     quiz_prompt="Quiz prompt.")
+        result = generate_article(topic="N+1 Queries — Detection patterns.",
+                                  article_instructions="Style instructions.")
 
     assert result["html"] == HTML_FRAGMENT
     assert result["title"] == "Test Article"
     assert result["accent"] == "#0d9488"
     assert len(result["id"]) == 5
     assert result["id"].isalnum()
-    assert len(result["quiz"]) == 1
-    assert result["quiz"][0]["options"][result["quiz"][0]["answer"]] == QUIZ_PARSED[0]["options"][QUIZ_PARSED[0]["answer"]]
+    assert "quiz" not in result
 
 
 def test_topic_included_in_prompt(mock_openai):
     """Topic string is passed verbatim to the OpenAI article prompt; no history section."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        run(topic="My Topic", article_instructions="Instructions", quiz_prompt="Quiz")
+        generate_article(topic="My Topic", article_instructions="Instructions")
 
     call_args = mock_openai.chat.completions.create.call_args_list[0]
     user_message = call_args.kwargs["messages"][1]["content"]
@@ -160,7 +157,7 @@ def test_missing_api_key():
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            run(topic="T", article_instructions="I", quiz_prompt="Q")
+            generate_article(topic="T", article_instructions="I")
 
 
 def test_short_id_format():
@@ -183,19 +180,18 @@ def test_openai_error_propagates():
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            run(topic="T", article_instructions="I", quiz_prompt="Q")
+            generate_article(topic="T", article_instructions="I")
 
 
 def test_accent_fallback():
     """When HTML has no --accent, accent defaults to #5b5ef4."""
     mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = [
-        MagicMock(choices=[MagicMock(message=MagicMock(content="<h1>No style</h1>"))]),
-        MagicMock(choices=[MagicMock(message=MagicMock(content=QUIZ_JSON))]),
-    ]
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="<h1>No style</h1>"))]
+    )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = run(topic="T", article_instructions="I", quiz_prompt="Q")
+        result = generate_article(topic="T", article_instructions="I")
 
     assert result["accent"] == "#5b5ef4"
 
@@ -203,12 +199,11 @@ def test_accent_fallback():
 def test_title_fallback():
     """When HTML has no h1, title defaults to 'New Article'."""
     mock_client = MagicMock()
-    mock_client.chat.completions.create.side_effect = [
-        MagicMock(choices=[MagicMock(message=MagicMock(content="<p>No heading</p>"))]),
-        MagicMock(choices=[MagicMock(message=MagicMock(content=QUIZ_JSON))]),
-    ]
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="<p>No heading</p>"))]
+    )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = run(topic="T", article_instructions="I", quiz_prompt="Q")
+        result = generate_article(topic="T", article_instructions="I")
 
     assert result["title"] == "New Article"

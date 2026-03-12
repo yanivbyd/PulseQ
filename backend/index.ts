@@ -1,6 +1,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
@@ -12,7 +13,7 @@ function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructu
   };
 }
 
-export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: LambdaClient, s3Client: S3Client) {
+export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: LambdaClient, s3Client: S3Client, sfnClient: SFNClient) {
   const tableName = () => {
     const t = process.env.ARTICLES_TABLE;
     if (!t) throw new Error("ARTICLES_TABLE environment variable is not set");
@@ -20,10 +21,10 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
   };
 
   async function handleGenerate(body: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {
-    const writerArn = process.env.WRITER_FUNCTION_ARN;
-    if (!writerArn) {
-      console.error("generate: WRITER_FUNCTION_ARN environment variable is not set");
-      return jsonResponse(500, { error: "WRITER_FUNCTION_ARN is not configured" });
+    const stateMachineArn = process.env.WRITER_STATE_MACHINE_ARN;
+    if (!stateMachineArn) {
+      console.error("generate: WRITER_STATE_MACHINE_ARN environment variable is not set");
+      return jsonResponse(500, { error: "WRITER_STATE_MACHINE_ARN is not configured" });
     }
 
     let parsed: unknown;
@@ -39,15 +40,14 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
     }
 
     try {
-      await lambdaClient.send(new InvokeCommand({
-        FunctionName: writerArn,
-        InvocationType: "Event",
-        Payload: JSON.stringify({ userId: genUserId }),
+      await sfnClient.send(new StartExecutionCommand({
+        stateMachineArn,
+        input: JSON.stringify({ userId: genUserId }),
       }));
       return jsonResponse(202, { status: "generating" });
     } catch (err) {
-      console.error("generate: Lambda invoke failed:", err);
-      return jsonResponse(500, { error: "Failed to invoke writer" });
+      console.error("generate: StartExecution failed:", err);
+      return jsonResponse(500, { error: "Failed to start writer pipeline" });
     }
   }
 
@@ -337,4 +337,5 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: "eu-west-1" }));
 const lambda = new LambdaClient({ region: "eu-west-1" });
 const s3 = new S3Client({ region: "eu-west-1" });
-export const handler = createHandler(ddb, lambda, s3);
+const sfn = new SFNClient({ region: "eu-west-1" });
+export const handler = createHandler(ddb, lambda, s3, sfn);

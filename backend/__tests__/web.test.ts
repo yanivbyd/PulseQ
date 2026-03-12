@@ -1,6 +1,7 @@
 import { createHandler } from "../index";
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 
@@ -74,6 +75,15 @@ function makeMockLambda(shouldFail = false) {
   return { send } as unknown as LambdaClient;
 }
 
+function makeMockSfn(shouldFail = false) {
+  const send = jest.fn().mockImplementation(() =>
+    shouldFail
+      ? Promise.reject(new Error("SFN error"))
+      : Promise.resolve({ executionArn: "arn:aws:states:eu-west-1:123:execution:SM:id" }),
+  );
+  return { send } as unknown as SFNClient;
+}
+
 const SAMPLE_QUIZ = [{ q: "What is a load balancer?", options: ["A proxy", "A router", "A switch"], answer: 0 }];
 
 const SAMPLE_ARTICLE = {
@@ -101,6 +111,7 @@ const MOCK_DB: Record<string, Record<string, unknown>[]> = {
 };
 
 const mockLambda = makeMockLambda();
+const mockSfn = makeMockSfn();
 const mockS3 = makeMockS3();
 
 describe("GET /api/topics", () => {
@@ -117,7 +128,7 @@ describe("GET /api/topics", () => {
 
   test("returns topics for a valid userId", async () => {
     const ddb = makeTopicsDdb(TOPICS);
-    const result = await createHandler(ddb, mockLambda, mockS3)(
+    const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -128,7 +139,7 @@ describe("GET /api/topics", () => {
   });
 
   test("returns 200 with empty topics when item does not exist in DDB", async () => {
-    const result = await createHandler(makeTopicsDdb(null), mockLambda, mockS3)(
+    const result = await createHandler(makeTopicsDdb(null), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -137,7 +148,7 @@ describe("GET /api/topics", () => {
 
   test("returns 400 when userId is missing", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeTopicsDdb([]), mockLambda, mockS3)(
+    const result = await createHandler(makeTopicsDdb([]), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/topics"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -149,7 +160,7 @@ describe("GET /api/topics", () => {
   test("returns 500 when TOPICS_TABLE is not set", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.TOPICS_TABLE;
-    const result = await createHandler(makeTopicsDdb(TOPICS), mockLambda, mockS3)(
+    const result = await createHandler(makeTopicsDdb(TOPICS), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -160,7 +171,7 @@ describe("GET /api/topics", () => {
 
   test("returns 500 on DDB error", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeTopicsDdb("error"), mockLambda, mockS3)(
+    const result = await createHandler(makeTopicsDdb("error"), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/topics", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -173,7 +184,7 @@ describe("GET /api/article-summaries", () => {
   beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
 
   test("returns 200 JSON for user1", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "user1" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -184,7 +195,7 @@ describe("GET /api/article-summaries", () => {
   });
 
   test("returns only userX's articles, not user1's", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "userX" }),
     ) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body as string);
@@ -193,7 +204,7 @@ describe("GET /api/article-summaries", () => {
   });
 
   test("returns 400 when userId is not provided", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -202,7 +213,7 @@ describe("GET /api/article-summaries", () => {
 
   test("queries with ProjectionExpression that excludes html and includes is_read", async () => {
     const ddb = makeMockDdb(MOCK_DB);
-    await createHandler(ddb, mockLambda, mockS3)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
+    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
     const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
     expect(cmd.input.ProjectionExpression).toBeDefined();
     expect(cmd.input.ProjectionExpression).not.toContain("html");
@@ -211,14 +222,14 @@ describe("GET /api/article-summaries", () => {
 
   test("applies FilterExpression to exclude read articles", async () => {
     const ddb = makeMockDdb(MOCK_DB);
-    await createHandler(ddb, mockLambda, mockS3)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
+    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" }));
     const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
     expect(cmd.input.FilterExpression).toBe("attribute_not_exists(is_read) OR is_read = :is_read");
     expect(cmd.input.ExpressionAttributeValues).toMatchObject({ ":is_read": false });
   });
 
   test("returns empty array for unknown userId", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article-summaries", { userId: "nobody" }),
     ) as APIGatewayProxyStructuredResultV2;
     expect(JSON.parse(result.body as string)).toEqual([]);
@@ -226,7 +237,7 @@ describe("GET /api/article-summaries", () => {
 
   test("propagates DynamoDB errors", async () => {
     await expect(
-      createHandler(makeMockDdbThrowing(), mockLambda, mockS3)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
+      createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
     ).rejects.toThrow();
   });
 });
@@ -235,7 +246,7 @@ describe("GET /api/article/:articleId", () => {
   beforeEach(() => { process.env.ARTICLES_TABLE = "pulseq-articles"; });
 
   test("returns full article JSON including parsed quiz array", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article/abc12"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -252,7 +263,7 @@ describe("GET /api/article/:articleId", () => {
     const articleWithoutQuiz = { ...SAMPLE_ARTICLE } as Record<string, unknown>;
     delete articleWithoutQuiz.quiz;
     const db = { user1: [articleWithoutQuiz] };
-    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article/abc12"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -263,7 +274,7 @@ describe("GET /api/article/:articleId", () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const articleBadQuiz = { ...SAMPLE_ARTICLE, quiz: "not valid json" };
     const db = { user1: [articleBadQuiz] };
-    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(db), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article/abc12"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -274,7 +285,7 @@ describe("GET /api/article/:articleId", () => {
 
   test("queries ById GSI with the articleId", async () => {
     const ddb = makeMockDdb(MOCK_DB);
-    await createHandler(ddb, mockLambda, mockS3)(makeGatewayEvent("/api/article/abc12"));
+    await createHandler(ddb, mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article/abc12"));
     const cmd = (ddb.send as jest.Mock).mock.calls[0][0] as QueryCommand;
     expect(cmd.input.IndexName).toBe("ById");
     expect(cmd.input.ExpressionAttributeValues).toMatchObject({ ":id": "abc12" });
@@ -282,7 +293,7 @@ describe("GET /api/article/:articleId", () => {
 
   test("returns 404 when article not found", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb(MOCK_DB), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/article/missing"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
@@ -292,7 +303,7 @@ describe("GET /api/article/:articleId", () => {
 
   test("propagates DynamoDB errors", async () => {
     await expect(
-      createHandler(makeMockDdbThrowing(), mockLambda, mockS3)(makeGatewayEvent("/api/article/abc12")),
+      createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article/abc12")),
     ).rejects.toThrow();
   });
 });
@@ -302,7 +313,7 @@ describe("unknown paths", () => {
 
   test("returns 404 JSON for unknown routes", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(makeGatewayEvent("/unknown")) as APIGatewayProxyStructuredResultV2;
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/unknown")) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
     expect(result.headers!["Content-Type"]).toBe("application/json");
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("/unknown"));
@@ -314,7 +325,7 @@ describe("environment", () => {
   test("throws if ARTICLES_TABLE env var is not set", async () => {
     delete process.env.ARTICLES_TABLE;
     await expect(
-      createHandler(makeMockDdb({}), mockLambda, mockS3)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
+      createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(makeGatewayEvent("/api/article-summaries", { userId: "user1" })),
     ).rejects.toThrow("ARTICLES_TABLE");
   });
 });
@@ -322,29 +333,25 @@ describe("environment", () => {
 describe("POST /api/generate", () => {
   beforeEach(() => {
     process.env.ARTICLES_TABLE = "pulseq-articles";
-    process.env.WRITER_FUNCTION_ARN = "arn:aws:lambda:eu-west-1:123456789:function:WriterFunction";
+    process.env.WRITER_STATE_MACHINE_ARN = "arn:aws:states:eu-west-1:123456789012:stateMachine:WriterSM";
   });
-  afterEach(() => { delete process.env.WRITER_FUNCTION_ARN; });
+  afterEach(() => { delete process.env.WRITER_STATE_MACHINE_ARN; });
 
-  test("invokes writer Lambda with InvocationType Event and userId payload, returns 202", async () => {
-    const lambda = makeMockLambda();
-    const result = await createHandler(makeMockDdb({}), lambda, mockS3)(
+  test("starts state machine execution with userId payload, returns 202", async () => {
+    const sfn = makeMockSfn();
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, sfn)(
       makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(202);
     expect(JSON.parse(result.body as string)).toEqual({ status: "generating" });
-    const cmd = (lambda.send as jest.Mock).mock.calls[0][0] as InvokeCommand;
-    expect(cmd.input.FunctionName).toBe(process.env.WRITER_FUNCTION_ARN);
-    expect(cmd.input.InvocationType).toBe("Event");
-    const payloadStr = typeof cmd.input.Payload === "string"
-      ? cmd.input.Payload
-      : Buffer.from(cmd.input.Payload as Uint8Array).toString();
-    expect(JSON.parse(payloadStr)).toEqual({ userId: "user1" });
+    const cmd = (sfn.send as jest.Mock).mock.calls[0][0] as StartExecutionCommand;
+    expect(cmd.input.stateMachineArn).toBe(process.env.WRITER_STATE_MACHINE_ARN);
+    expect(JSON.parse(cmd.input.input!)).toEqual({ userId: "user1" });
   });
 
   test("returns 400 when userId is missing", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({})),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -353,30 +360,30 @@ describe("POST /api/generate", () => {
     warnSpy.mockRestore();
   });
 
-  test("returns 500 when Lambda invoke fails", async () => {
+  test("returns 500 when StartExecution fails", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), makeMockLambda(true), mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, makeMockSfn(true))(
       makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Lambda invoke failed"), expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("StartExecution failed"), expect.any(Error));
     errorSpy.mockRestore();
   });
 
-  test("returns 500 when WRITER_FUNCTION_ARN is missing", async () => {
+  test("returns 500 when WRITER_STATE_MACHINE_ARN is missing", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    delete process.env.WRITER_FUNCTION_ARN;
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    delete process.env.WRITER_STATE_MACHINE_ARN;
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/generate", undefined, "POST"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
-    expect(JSON.parse(result.body as string).error).toMatch(/WRITER_FUNCTION_ARN/);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("WRITER_FUNCTION_ARN"));
+    expect(JSON.parse(result.body as string).error).toMatch(/WRITER_STATE_MACHINE_ARN/);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("WRITER_STATE_MACHINE_ARN"));
     errorSpy.mockRestore();
   });
 
   test("returns 404 for GET /api/generate (wrong method)", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/generate"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
@@ -392,7 +399,7 @@ describe("POST /api/scout", () => {
 
   test("invokes scout Lambda with userId payload and returns 202", async () => {
     const lambda = makeMockLambda();
-    const result = await createHandler(makeMockDdb({}), lambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), lambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(202);
@@ -408,7 +415,7 @@ describe("POST /api/scout", () => {
 
   test("returns 400 when userId is missing", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({})),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -420,7 +427,7 @@ describe("POST /api/scout", () => {
   test("returns 500 when SCOUT_FUNCTION_ARN is missing", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.SCOUT_FUNCTION_ARN;
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -431,7 +438,7 @@ describe("POST /api/scout", () => {
 
   test("returns 500 when Lambda invoke fails", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), makeMockLambda(true), mockS3)(
+    const result = await createHandler(makeMockDdb({}), makeMockLambda(true), mockS3, mockSfn)(
       makeGatewayEvent("/api/scout", undefined, "POST", JSON.stringify({ userId: "user1" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -470,7 +477,7 @@ describe("POST /api/feedback", () => {
   test("reaction event: writes correct S3 key and envelope, returns 200", async () => {
     const s3 = makeMockS3();
     const ts = validTimestamp();
-    const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, s3, mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
         articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
         content: { type: "reaction", reaction: "like" }, clientTimestamp: ts,
@@ -489,7 +496,7 @@ describe("POST /api/feedback", () => {
   test("freeText event: writes correct S3 envelope, returns 200", async () => {
     const s3 = makeMockS3();
     const ts = validTimestamp();
-    const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, s3, mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", JSON.stringify({
         articleId: "abc12", articleTitle: "How Load Balancers Work", userId: "user1",
         content: { type: "freeText", text: "Great explanation of CRDTs" }, clientTimestamp: ts,
@@ -503,14 +510,14 @@ describe("POST /api/feedback", () => {
 
   test("accepts dislike reaction", async () => {
     const s3 = makeMockS3();
-    const result = await createHandler(makeMockDdb({}), mockLambda, s3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, s3, mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "reaction", reaction: "dislike" } })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
   });
 
   test("returns 400 for missing/null content", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: null })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -519,7 +526,7 @@ describe("POST /api/feedback", () => {
   });
 
   test("returns 400 for unknown content.type", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "unknown" } })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -528,7 +535,7 @@ describe("POST /api/feedback", () => {
   });
 
   test("returns 400 for invalid reaction value", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "reaction", reaction: "meh" } })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -538,7 +545,7 @@ describe("POST /api/feedback", () => {
 
   test("returns 400 when content.text exceeds 5000 characters", async () => {
     const longText = "a".repeat(5001);
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content: { type: "freeText", text: longText } })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -547,7 +554,7 @@ describe("POST /api/feedback", () => {
   });
 
   test("returns 400 for missing articleId", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ articleId: "" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -556,7 +563,7 @@ describe("POST /api/feedback", () => {
 
   test("returns 400 for timestamp more than 15 minutes old", async () => {
     const old = new Date(Date.now() - 16 * 60 * 1000).toISOString().replace(/:/g, "-");
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ clientTimestamp: old })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -566,7 +573,7 @@ describe("POST /api/feedback", () => {
 
   test("returns 400 for timestamp more than 15 minutes in the future", async () => {
     const future = new Date(Date.now() + 16 * 60 * 1000).toISOString().replace(/:/g, "-");
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ clientTimestamp: future })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -575,7 +582,7 @@ describe("POST /api/feedback", () => {
 
   test("returns 500 when S3 write fails", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(true))(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(true), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -586,7 +593,7 @@ describe("POST /api/feedback", () => {
   test("returns 500 when EVENTS_BUCKET is not set", async () => {
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.EVENTS_BUCKET;
-    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3())(
+    const result = await createHandler(makeMockDdb({}), mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -599,7 +606,7 @@ describe("POST /api/feedback", () => {
     const infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
     for (const content of [{ type: "reaction", reaction: "like" }, { type: "freeText", text: "nice" }]) {
       const ddb = makeMockDdb(MOCK_DB);
-      const result = await createHandler(ddb, mockLambda, makeMockS3())(
+      const result = await createHandler(ddb, mockLambda, makeMockS3(), mockSfn)(
         makeGatewayEvent("/api/feedback", undefined, "POST", validBody({ content })),
       ) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
@@ -616,7 +623,7 @@ describe("POST /api/feedback", () => {
   test("returns 200 and warns when DynamoDB auto-mark-read fails", async () => {
     const warnSpy2 = jest.spyOn(console, "warn").mockImplementation(() => {});
     const ddb = makeMockDdb(MOCK_DB, { updateFails: true });
-    const result = await createHandler(ddb, mockLambda, makeMockS3())(
+    const result = await createHandler(ddb, mockLambda, makeMockS3(), mockSfn)(
       makeGatewayEvent("/api/feedback", undefined, "POST", validBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -646,7 +653,7 @@ describe("POST /api/mark-read", () => {
   test("marks article as read and returns 200", async () => {
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     const ddb = makeMockDdb(MOCK_DB);
-    const result = await createHandler(ddb, mockLambda, mockS3)(
+    const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -662,7 +669,7 @@ describe("POST /api/mark-read", () => {
 
   test("marks article as unread (is_read: false) and returns 200", async () => {
     const ddb = makeMockDdb(MOCK_DB);
-    const result = await createHandler(ddb, mockLambda, mockS3)(
+    const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ is_read: false })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -672,7 +679,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 404 when article not found", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ articleId: "missing" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(404);
@@ -681,7 +688,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 400 for invalid JSON body", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", "not-json"),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -689,7 +696,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 400 for missing userId", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ userId: "" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -698,7 +705,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 400 for missing articleId", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ articleId: "" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -706,7 +713,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 400 when is_read is not a boolean (string 'true')", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ is_read: "true" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -715,7 +722,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 400 for missing idempotencyKey", async () => {
-    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody({ idempotencyKey: "" })),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(400);
@@ -723,7 +730,7 @@ describe("POST /api/mark-read", () => {
   });
 
   test("returns 500 when GSI query fails", async () => {
-    const result = await createHandler(makeMockDdbThrowing(), mockLambda, mockS3)(
+    const result = await createHandler(makeMockDdbThrowing(), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);
@@ -732,7 +739,7 @@ describe("POST /api/mark-read", () => {
 
   test("returns 500 when UpdateItem fails", async () => {
     const ddb = makeMockDdb(MOCK_DB, { updateFails: true });
-    const result = await createHandler(ddb, mockLambda, mockS3)(
+    const result = await createHandler(ddb, mockLambda, mockS3, mockSfn)(
       makeGatewayEvent("/api/mark-read", undefined, "POST", validMarkReadBody()),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(500);

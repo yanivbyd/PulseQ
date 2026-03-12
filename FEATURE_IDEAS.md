@@ -1,3 +1,8 @@
 - Extend feedback to 5 more questions with score 1-5
 - Separate Further Reading to a different AI call - and verify the links. Most of them do not work.
 - User tastes, allow editing it (via AI)
+- Suggest a new DDB schema
+- "Generate article (from topic)" button - should allow adding extra information to be passed to the AI
+- Topics and Articles look too much alike. The new topic is also confusing. Do something about it - to indicate topics are ideas for articles.
+- From an article add 'Generate Follow-up Article', and allow the user to add more text.
+- When sending feedback on an article, include the article text as well. But it needs summary within the context of the feedback. Consider uniting all the feedback together and summarizing it together.  

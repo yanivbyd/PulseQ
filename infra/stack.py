@@ -1,10 +1,7 @@
 import json
-import os
 
 from aws_cdk import (
-    BundlingOptions,
     CfnOutput,
-    Duration,
     RemovalPolicy,
     Stack,
     aws_apigatewayv2 as apigwv2,
@@ -13,13 +10,14 @@ from aws_cdk import (
     aws_cloudfront_origins as cf_origins,
     aws_dynamodb as dynamodb,
     aws_iam as iam,
-    aws_lambda as _lambda,
-    aws_lambda_nodejs as nodejs,
     aws_s3 as s3,
     aws_scheduler as scheduler,
     aws_secretsmanager as sm,
 )
 from constructs import Construct
+
+from lambdas_stack import create_lambdas
+from writer_pipeline_stack import create_writer_pipeline
 
 
 class WriterStack(Stack):
@@ -83,53 +81,6 @@ class WriterStack(Stack):
             "pulseq/ifttt-key",
         )
 
-        # ── Writer Lambda ────────────────────────────────────────────────────
-        writer_fn = _lambda.Function(
-            self,
-            "WriterFunction",
-            runtime=_lambda.Runtime.PYTHON_3_12,
-            architecture=_lambda.Architecture.ARM_64,
-            handler="lambda_handler.handler",
-            code=_lambda.Code.from_asset(
-                "../writer",
-                bundling=BundlingOptions(
-                    image=_lambda.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
-                    ],
-                ),
-            ),
-            timeout=Duration.minutes(5),
-            environment={
-                "INPUT_BUCKET": input_bucket.bucket_name,
-                "SECRET_NAME": secret.secret_name,
-                "IFTTT_SECRET_NAME": ifttt_secret.secret_name,
-                "ARTICLES_TABLE": articles_table.table_name,
-                "TOPICS_TABLE": topics_table.table_name,
-            },
-        )
-
-        # ── IAM permissions ─────────────────────────────────────────────────
-        input_bucket.grant_read(writer_fn)
-        secret.grant_read(writer_fn)
-        ifttt_secret.grant_read(writer_fn)
-        articles_table.grant(writer_fn, "dynamodb:PutItem")
-        topics_table.grant_read_write_data(writer_fn)
-
-        # ── API Gateway HTTP API (writer) ────────────────────────────────────
-        http_api = apigwv2.HttpApi(self, "WriterApi")
-        http_api.add_routes(
-            path="/run",
-            methods=[apigwv2.HttpMethod.POST],
-            integration=integrations.HttpLambdaIntegration(
-                "WriterIntegration", writer_fn
-            ),
-        )
-
-        CfnOutput(self, "ApiUrl", value=f"{http_api.api_endpoint}/run")
-
         # ── S3: events (user feedback and future UI events) ──────────────────
         events_bucket = s3.Bucket(
             self,
@@ -139,67 +90,35 @@ class WriterStack(Stack):
             removal_policy=RemovalPolicy.RETAIN,
         )
 
-        # ── Scout Lambda ─────────────────────────────────────────────────────
-        scout_fn = _lambda.Function(
+        # ── Lambdas ──────────────────────────────────────────────────────────
+        lambdas = create_lambdas(
             self,
-            "ScoutFunction",
-            runtime=_lambda.Runtime.PYTHON_3_12,
-            architecture=_lambda.Architecture.ARM_64,
-            handler="lambda_handler.handler",
-            code=_lambda.Code.from_asset(
-                "../scout",
-                bundling=BundlingOptions(
-                    image=_lambda.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
-                    ],
-                ),
-            ),
-            timeout=Duration.minutes(15),
-            environment={
-                "INPUT_BUCKET": input_bucket.bucket_name,
-                "EVENTS_BUCKET": events_bucket.bucket_name,
-                "SECRET_NAME": secret.secret_name,
-                "TOPICS_TABLE": topics_table.table_name,
-            },
+            input_bucket=input_bucket,
+            events_bucket=events_bucket,
+            articles_table=articles_table,
+            topics_table=topics_table,
+            secret=secret,
+            ifttt_secret=ifttt_secret,
         )
 
-        input_bucket.grant_read(scout_fn)
-        events_bucket.grant_read(scout_fn)
-        secret.grant_read(scout_fn)
-        topics_table.grant_read_write_data(scout_fn)
-
-        # ── Backend Lambda (Node.js — JSON API for articles) ─────────────────
-        web_fn = nodejs.NodejsFunction(
+        # ── Step Functions: WriterStateMachine ───────────────────────────────
+        writer_state_machine = create_writer_pipeline(
             self,
-            "WebFunction",
-            entry="../backend/index.ts",
-            handler="handler",
-            runtime=_lambda.Runtime.NODEJS_22_X,
-            architecture=_lambda.Architecture.ARM_64,
-            timeout=Duration.seconds(10),
-            environment={
-                "ARTICLES_TABLE": articles_table.table_name,
-                "TOPICS_TABLE": topics_table.table_name,
-            },
-            bundling=nodejs.BundlingOptions(
-                external_modules=["@aws-sdk/*"],
-            ),
+            article_fn=lambdas.article_fn,
+            quiz_fn=lambdas.quiz_fn,
+            notification_fn=lambdas.notification_fn,
         )
-        articles_table.grant(web_fn, "dynamodb:Query", "dynamodb:UpdateItem")
-        topics_table.grant_read_data(web_fn)
-        writer_fn.grant_invoke(web_fn)
-        scout_fn.grant_invoke(web_fn)
-        events_bucket.grant_put(web_fn)
-        web_fn.add_environment("WRITER_FUNCTION_ARN", writer_fn.function_arn)
-        web_fn.add_environment("SCOUT_FUNCTION_ARN", scout_fn.function_arn)
-        web_fn.add_environment("EVENTS_BUCKET", events_bucket.bucket_name)
+
+        # ── Cross-cutting wiring (state machine ↔ lambdas) ──────────────────
+        writer_state_machine.grant_start_execution(lambdas.web_fn)
+        lambdas.web_fn.add_environment("WRITER_STATE_MACHINE_ARN", writer_state_machine.state_machine_arn)
+
+        writer_state_machine.grant_start_execution(lambdas.mcp_fn)
+        lambdas.mcp_fn.add_environment("WRITER_STATE_MACHINE_ARN", writer_state_machine.state_machine_arn)
 
         # ── API Gateway HTTP API (backend) ───────────────────────────────────
         web_api = apigwv2.HttpApi(self, "WebApi")
-        web_integration = integrations.HttpLambdaIntegration("WebIntegration", web_fn)
+        web_integration = integrations.HttpLambdaIntegration("WebIntegration", lambdas.web_fn)
         web_api.add_routes(
             path="/api/article-summaries",
             methods=[apigwv2.HttpMethod.GET],
@@ -273,43 +192,17 @@ class WriterStack(Stack):
             ],
         )
 
-        writer_fn.add_environment("WEB_BASE_URL", f"https://{frontend_distribution.domain_name}")
+        lambdas.notification_fn.add_environment("WEB_BASE_URL", f"https://{frontend_distribution.domain_name}")
 
         CfnOutput(self, "FrontendUrl", value=f"https://{frontend_distribution.domain_name}")
         CfnOutput(self, "BackendApiUrl", value=web_api.api_endpoint)
 
-        # ── MCP Server Lambda ────────────────────────────────────────────────
-        mcp_fn = _lambda.Function(
-            self,
-            "McpServerFunction",
-            runtime=_lambda.Runtime.PYTHON_3_12,
-            architecture=_lambda.Architecture.ARM_64,
-            handler="lambda_handler.handler",
-            code=_lambda.Code.from_asset(
-                "../mcp_server",
-                bundling=BundlingOptions(
-                    image=_lambda.Runtime.PYTHON_3_12.bundling_image,
-                    command=[
-                        "bash",
-                        "-c",
-                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output",
-                    ],
-                ),
-            ),
-            timeout=Duration.seconds(30),
-            environment={
-                "WRITER_LAMBDA_NAME": writer_fn.function_name,
-                "USER_ID": "user1",
-            },
-        )
-
-        writer_fn.grant_invoke(mcp_fn)
-
+        # ── MCP API Gateway ──────────────────────────────────────────────────
         mcp_api = apigwv2.HttpApi(self, "McpHttpApi")
         mcp_api.add_routes(
             path="/{proxy+}",
             methods=[apigwv2.HttpMethod.ANY],
-            integration=integrations.HttpLambdaIntegration("McpIntegration", mcp_fn),
+            integration=integrations.HttpLambdaIntegration("McpIntegration", lambdas.mcp_fn),
         )
 
         # Apply throttling to the auto-created $default stage via L1 escape hatch
@@ -330,7 +223,7 @@ class WriterStack(Stack):
                     statements=[
                         iam.PolicyStatement(
                             actions=["lambda:InvokeFunction"],
-                            resources=[scout_fn.function_arn],
+                            resources=[lambdas.scout_fn.function_arn],
                         )
                     ]
                 )
@@ -347,23 +240,23 @@ class WriterStack(Stack):
                 maximum_window_in_minutes=10,
             ),
             target=scheduler.CfnSchedule.TargetProperty(
-                arn=scout_fn.function_arn,
+                arn=lambdas.scout_fn.function_arn,
                 role_arn=scout_scheduler_role.role_arn,
                 input=json.dumps({"userId": "user1"}),
             ),
         )
 
-        # ── Daily scheduler: invoke Writer Lambda at 08:00 Asia/Jerusalem ────
+        # ── Daily scheduler: start WriterStateMachine at 08:00 Asia/Jerusalem ─
         scheduler_role = iam.Role(
             self,
             "SchedulerRole",
             assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"),
             inline_policies={
-                "InvokeWriter": iam.PolicyDocument(
+                "StartWriterExecution": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
-                            actions=["lambda:InvokeFunction"],
-                            resources=[writer_fn.function_arn],
+                            actions=["states:StartExecution"],
+                            resources=[writer_state_machine.state_machine_arn],
                         )
                     ]
                 )
@@ -380,7 +273,7 @@ class WriterStack(Stack):
                 maximum_window_in_minutes=30,
             ),
             target=scheduler.CfnSchedule.TargetProperty(
-                arn=writer_fn.function_arn,
+                arn=writer_state_machine.state_machine_arn,
                 role_arn=scheduler_role.role_arn,
                 input=json.dumps({"userId": "user1"}),
             ),

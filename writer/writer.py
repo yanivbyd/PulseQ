@@ -72,7 +72,7 @@ def generate_quiz(client, html: str, quiz_prompt: str) -> list:
         return []
 
 
-def run(topic: str, article_instructions: str, quiz_prompt: str) -> dict:
+def generate_article(topic: str, article_instructions: str) -> dict:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise EnvironmentError("OPENAI_API_KEY environment variable is not set.")
@@ -87,11 +87,9 @@ def run(topic: str, article_instructions: str, quiz_prompt: str) -> dict:
     )
 
     html = strip_markdown_fences(response.choices[0].message.content)
-    quiz = generate_quiz(client, html, quiz_prompt)
     return {
         "id": generate_short_id(),
         "html": html,
         "title": _extract_title(html),
         "accent": _extract_accent(html),
-        "quiz": quiz,
     }

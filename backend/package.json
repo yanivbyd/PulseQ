@@ -19,5 +19,8 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sfn": "^3.1006.0"
   }
 }
