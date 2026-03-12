@@ -51,4 +51,11 @@ describe("HamburgerMenu", () => {
     await userEvent.click(screen.getByRole("link", { name: "Articles" }));
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
   });
+
+  test("applies className and floating toggle class when floating prop is set", () => {
+    render(<MemoryRouter><HamburgerMenu className="myWrapper" floating /></MemoryRouter>);
+    const btn = screen.getByRole("button", { name: "Open menu" });
+    expect(btn.className).toMatch(/toggleFloating/);
+    expect(btn.closest("div")!.className).toMatch(/myWrapper/);
+  });
 });

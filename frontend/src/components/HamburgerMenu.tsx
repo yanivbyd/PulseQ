@@ -8,7 +8,7 @@ const NAV_LINKS = [
   { label: "New Article", to: "/generate", icon: "✏️" },
 ];
 
-export default function HamburgerMenu() {
+export default function HamburgerMenu({ className, floating }: { className?: string; floating?: boolean }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -31,9 +31,9 @@ export default function HamburgerMenu() {
   }, [open]);
 
   return (
-    <div ref={wrapperRef} className={styles.wrapper}>
+    <div ref={wrapperRef} className={`${styles.wrapper}${className ? ` ${className}` : ""}`}>
       <button
-        className={styles.toggle}
+        className={`${styles.toggle}${floating ? ` ${styles.toggleFloating}` : ""}`}
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}

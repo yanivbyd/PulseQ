@@ -61,9 +61,7 @@ export default function ArticlePage() {
 
   return (
     <>
-      <div className={styles.topBar}>
-        <HamburgerMenu />
-      </div>
+      <HamburgerMenu className={styles.floatingMenu} floating />
       <div
         className={styles.wrapper}
         dangerouslySetInnerHTML={{ __html: article.html }}

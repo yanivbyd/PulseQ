@@ -18,6 +18,16 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
+.toggleFloating {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.toggleFloating:hover {
+  background: rgba(0, 0, 0, 0.55);
+}
+
 .menu {
   position: absolute;
   right: 0;
