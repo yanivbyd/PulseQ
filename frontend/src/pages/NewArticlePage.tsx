@@ -63,7 +63,7 @@ export default function NewArticlePage() {
       {mode === "custom" && (
         <textarea
           className={styles.topicInput}
-          placeholder="e.g. quantum computing breakthroughs in 2025"
+
           maxLength={MAX_TOPIC_LENGTH}
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
