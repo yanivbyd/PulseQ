@@ -15,6 +15,7 @@ const ARTICLE = {
   title: "Test Article",
   html: "<p>Hello world</p>",
   quiz: [],
+  further_reading: [],
 };
 
 function renderArticlePage(id = "abc12") {
@@ -145,5 +146,23 @@ describe("ArticlePage feedback bar", () => {
     await userEvent.click(screen.getByLabelText("Like"));
     await waitFor(() => expect(screen.getByText(/something went wrong/i)).toBeInTheDocument());
     expect(isSelected(screen.getByLabelText("Like"))).toBe(false);
+  });
+});
+
+describe("ArticlePage FurtherReadingSection", () => {
+  test("renders further reading links when article has items", async () => {
+    vi.mocked(api.fetchArticle).mockResolvedValue({
+      ...ARTICLE,
+      further_reading: [{ url: "https://example.com", title: "Example Post" }],
+    });
+    renderArticlePage();
+    expect(await screen.findByText("Example Post")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Example Post" })).toHaveAttribute("href", "https://example.com");
+  });
+
+  test("does not render further reading section when list is empty", async () => {
+    renderArticlePage(); // ARTICLE has further_reading: []
+    await screen.findByLabelText("Like"); // wait for article to load
+    expect(screen.queryByText(/Further Reading/i)).not.toBeInTheDocument();
   });
 });

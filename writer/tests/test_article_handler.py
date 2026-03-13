@@ -1,5 +1,5 @@
 import os
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -8,19 +8,29 @@ ENV = {
     "INPUT_BUCKET": "pulseq-inputs",
     "ARTICLES_TABLE": "pulseq-articles",
     "USER_INBOX_TABLE": "pulseq-user-inbox",
-    "TOPICS_TABLE": "pulseq-topics",
 }
-
-SAMPLE_TOPICS = [{"title": "N+1 Queries", "description": "Detection patterns."}]
 
 SAMPLE_ARTICLE = {
     "id": "abc12",
-    "html": '<div class="header-card"><h1>Load Balancers</h1></div>',
+    "html": "<title>Load Balancers</title><div class=\"header-card\"><h1>Load Balancers</h1></div>",
     "title": "Load Balancers",
     "accent": "#0d9488",
 }
 
-ORIGINAL_HTML = '<div class="header-card"><h1>Original Article</h1></div>'
+ORIGINAL_HTML = "<title>Original Article</title><div class=\"header-card\"><h1>Original Article</h1></div>"
+
+SAMPLE_TAVILY = {
+    "results": [
+        {"url": "https://example.com/1", "title": "Post 1", "content": "snippet", "score": 0.9},
+    ],
+    "images": [],
+}
+
+BASE_EVENT = {
+    "userId": "user1",
+    "articleId": "abc12",
+    "articleTopic": "Load Balancers — Overview.",
+}
 
 
 def _make_sm_client(api_key="sk-test"):
@@ -47,15 +57,6 @@ def _make_s3_client():
     return s3
 
 
-def _make_topics_table(topics=None):
-    table = MagicMock()
-    if topics is None:
-        table.get_item.return_value = {}
-    else:
-        table.get_item.return_value = {"Item": {"userId": "user1", "topics": topics}}
-    return table
-
-
 def _make_articles_table():
     return MagicMock()
 
@@ -64,14 +65,11 @@ def _make_inbox_table():
     return MagicMock()
 
 
-def _make_ddb_resource(topics_table=None, articles_table=None, inbox_table=None):
-    tt = topics_table or _make_topics_table(SAMPLE_TOPICS)
+def _make_ddb_resource(articles_table=None, inbox_table=None):
     at = articles_table or _make_articles_table()
     it = inbox_table or _make_inbox_table()
 
     def table_factory(name):
-        if name == "pulseq-topics":
-            return tt
         if name == "pulseq-articles":
             return at
         if name == "pulseq-user-inbox":
@@ -80,7 +78,7 @@ def _make_ddb_resource(topics_table=None, articles_table=None, inbox_table=None)
 
     ddb = MagicMock()
     ddb.Table.side_effect = table_factory
-    return ddb, tt, at, it
+    return ddb, at, it
 
 
 def _boto_client_factory(sm=None, s3=None):
@@ -97,8 +95,8 @@ def _boto_client_factory(sm=None, s3=None):
     return factory
 
 
-def _fake_generate_article(topic, article_instructions, user_tastes):
-    return SAMPLE_ARTICLE.copy()
+def _fake_generate_article(article_id, topic, article_instructions, user_tastes, tavily_results=None):
+    return {**SAMPLE_ARTICLE, "id": article_id}
 
 
 class TestArticleHandler:
@@ -113,36 +111,87 @@ class TestArticleHandler:
     def test_happy_path(self, mock_gen, mock_boto_client, mock_boto_resource):
         sm = _make_sm_client()
         s3 = _make_s3_client()
-        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
+        ddb, articles_table, inbox_table = _make_ddb_resource()
         mock_boto_client.side_effect = _boto_client_factory(sm=sm, s3=s3)
         mock_boto_resource.return_value = ddb
 
         from writer.article_handler import handler
-        result = handler({"userId": "user1"}, None)
+        result = handler(BASE_EVENT.copy(), None)
 
-        assert result == {"articleId": "abc12", "userId": "user1", "articleTitle": "Load Balancers"}
-        article_id = result["articleId"]
+        assert result == {"articleId": "abc12", "userId": "user1", "articleTopic": "Load Balancers — Overview.", "articleTitle": "Load Balancers"}
 
-        # articles_table gets the full article content (no accent)
         articles_table.put_item.assert_called_once()
         art_item = articles_table.put_item.call_args.kwargs["Item"]
-        assert art_item["articleId"] == article_id
+        assert art_item["articleId"] == "abc12"
         assert art_item["userId"] == "user1"
         assert art_item["title"] == "Load Balancers"
         assert art_item["html"] == SAMPLE_ARTICLE["html"]
         assert "accent" not in art_item
         assert "quiz" not in art_item
         assert isinstance(art_item["creation_timestamp"], str)
+        assert art_item["further_reading"] == "[]"
 
-        # inbox_table gets denormalized summary
         inbox_table.put_item.assert_called_once()
         inbox_item = inbox_table.put_item.call_args.kwargs["Item"]
         assert inbox_item["userId"] == "user1"
-        assert inbox_item["articleId"] == article_id
+        assert inbox_item["articleId"] == "abc12"
         assert inbox_item["title"] == "Load Balancers"
-        assert inbox_item["creation_timestamp"] == art_item["creation_timestamp"]
 
-        topics_table.update_item.assert_called_once()
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_tavily_results_included_in_further_reading(self, mock_gen, mock_boto_client, mock_boto_resource):
+        ddb, articles_table, _ = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        event = {**BASE_EVENT, "tavilyResults": SAMPLE_TAVILY}
+        from writer.article_handler import handler
+        handler(event, None)
+
+        import json
+        art_item = articles_table.put_item.call_args.kwargs["Item"]
+        further_reading = json.loads(art_item["further_reading"])
+        assert further_reading == [{"url": "https://example.com/1", "title": "Post 1"}]
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_malformed_tavily_results_fail_open(self, mock_gen, mock_boto_client, mock_boto_resource):
+        ddb, articles_table, _ = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        event = {**BASE_EVENT, "tavilyResults": "not a dict"}
+        from writer.article_handler import handler
+        with patch("writer.article_handler.logger.warning") as warn_spy:
+            result = handler(event, None)
+
+        assert result["articleId"] == "abc12"
+        art_item = articles_table.put_item.call_args.kwargs["Item"]
+        assert art_item["further_reading"] == "[]"
+        warn_spy.assert_called_once()
+
+    @patch.dict(os.environ, ENV)
+    @patch("writer.article_handler.boto3.resource")
+    @patch("writer.article_handler.boto3.client")
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_absent_tavily_results_proceeds_with_empty_further_reading(self, mock_gen, mock_boto_client, mock_boto_resource):
+        """When tavilyResults is absent (e.g. Tavily step failed), article generation proceeds and further_reading is []."""
+        ddb, articles_table, _ = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
+        mock_boto_resource.return_value = ddb
+
+        from writer.article_handler import handler
+        with patch("writer.article_handler.logger.warning") as warn_spy:
+            result = handler(BASE_EVENT.copy(), None)
+
+        assert result["articleId"] == "abc12"
+        art_item = articles_table.put_item.call_args.kwargs["Item"]
+        assert art_item["further_reading"] == "[]"
+        warn_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
     def test_missing_user_id_raises(self):
@@ -150,6 +199,22 @@ class TestArticleHandler:
             from writer.article_handler import handler
             with pytest.raises(ValueError, match="userId"):
                 handler({}, None)
+        error_spy.assert_called_once()
+
+    @patch.dict(os.environ, ENV)
+    def test_missing_article_id_raises(self):
+        with patch("writer.article_handler.logger.error") as error_spy:
+            from writer.article_handler import handler
+            with pytest.raises(ValueError, match="articleId"):
+                handler({"userId": "user1", "articleTopic": "topic"}, None)
+        error_spy.assert_called_once()
+
+    @patch.dict(os.environ, ENV)
+    def test_missing_article_topic_raises(self):
+        with patch("writer.article_handler.logger.error") as error_spy:
+            from writer.article_handler import handler
+            with pytest.raises(ValueError, match="articleTopic"):
+                handler({"userId": "user1", "articleId": "abc12"}, None)
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
@@ -162,7 +227,7 @@ class TestArticleHandler:
         with patch("writer.article_handler.logger.error") as error_spy:
             from writer.article_handler import handler
             with pytest.raises(Exception, match="AccessDenied"):
-                handler({"userId": "user1"}, None)
+                handler(BASE_EVENT.copy(), None)
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
@@ -171,28 +236,14 @@ class TestArticleHandler:
     def test_s3_failure_raises(self, mock_boto_client, mock_boto_resource):
         s3 = MagicMock()
         s3.get_object.side_effect = Exception("NoSuchKey")
-        ddb, _, _, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = _boto_client_factory(s3=s3)
         mock_boto_resource.return_value = ddb
 
         with patch("writer.article_handler.logger.error") as error_spy:
             from writer.article_handler import handler
             with pytest.raises(Exception, match="NoSuchKey"):
-                handler({"userId": "user1"}, None)
-        error_spy.assert_called_once()
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    def test_empty_topics_raises(self, mock_boto_client, mock_boto_resource):
-        ddb, _, _, _ = _make_ddb_resource(topics_table=_make_topics_table([]))
-        mock_boto_client.side_effect = _boto_client_factory()
-        mock_boto_resource.return_value = ddb
-
-        with patch("writer.article_handler.logger.error") as error_spy:
-            from writer.article_handler import handler
-            with pytest.raises(Exception):
-                handler({"userId": "user1"}, None)
+                handler(BASE_EVENT.copy(), None)
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
@@ -200,14 +251,14 @@ class TestArticleHandler:
     @patch("writer.article_handler.boto3.client")
     @patch("writer.article_handler.generate_article", side_effect=RuntimeError("gpt down"))
     def test_generate_article_failure_raises(self, mock_gen, mock_boto_client, mock_boto_resource):
-        ddb, _, _, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = _boto_client_factory()
         mock_boto_resource.return_value = ddb
 
         with patch("writer.article_handler.logger.error") as error_spy:
             from writer.article_handler import handler
             with pytest.raises(RuntimeError, match="gpt down"):
-                handler({"userId": "user1"}, None)
+                handler(BASE_EVENT.copy(), None)
         error_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
@@ -221,54 +272,15 @@ class TestArticleHandler:
             {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "Throttled"}},
             "put_item",
         )
-        ddb, _, _, _ = _make_ddb_resource(articles_table=articles_table)
+        ddb, _, _ = _make_ddb_resource(articles_table=articles_table)
         mock_boto_client.side_effect = _boto_client_factory()
         mock_boto_resource.return_value = ddb
 
         with patch("writer.article_handler.logger.error") as error_spy:
             from writer.article_handler import handler
             with pytest.raises(ClientError):
-                handler({"userId": "user1"}, None)
+                handler(BASE_EVENT.copy(), None)
         error_spy.assert_called_once()
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
-    def test_inbox_save_failure_raises(self, mock_gen, mock_boto_client, mock_boto_resource):
-        from botocore.exceptions import ClientError
-        inbox_table = _make_inbox_table()
-        inbox_table.put_item.side_effect = ClientError(
-            {"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "Throttled"}},
-            "put_item",
-        )
-        ddb, _, _, _ = _make_ddb_resource(inbox_table=inbox_table)
-        mock_boto_client.side_effect = _boto_client_factory()
-        mock_boto_resource.return_value = ddb
-
-        with patch("writer.article_handler.logger.error") as error_spy:
-            from writer.article_handler import handler
-            with pytest.raises(ClientError):
-                handler({"userId": "user1"}, None)
-        error_spy.assert_called_once()
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
-    def test_topic_consume_fail_open(self, mock_gen, mock_boto_client, mock_boto_resource):
-        """update_item failure is non-fatal: warning logged, handler still returns result."""
-        ddb, topics_table, _, _ = _make_ddb_resource()
-        topics_table.update_item.side_effect = Exception("ConditionalCheckFailed")
-        mock_boto_client.side_effect = _boto_client_factory()
-        mock_boto_resource.return_value = ddb
-
-        with patch("writer.article_handler.logger.warning") as warn_spy:
-            from writer.article_handler import handler
-            result = handler({"userId": "user1"}, None)
-
-        assert result["articleTitle"] == "Load Balancers"
-        warn_spy.assert_called_once()
 
     @patch.dict(os.environ, ENV)
     @patch("writer.article_handler.boto3.resource")
@@ -276,65 +288,23 @@ class TestArticleHandler:
     @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
     def test_api_key_cached(self, mock_gen, mock_boto_client, mock_boto_resource):
         sm = _make_sm_client()
-        ddb, _, _, _ = _make_ddb_resource()
+        ddb, _, _ = _make_ddb_resource()
         mock_boto_client.side_effect = _boto_client_factory(sm=sm)
         mock_boto_resource.return_value = ddb
 
         from writer.article_handler import handler
-        handler({"userId": "user1"}, None)
-        handler({"userId": "user1"}, None)
+        handler(BASE_EVENT.copy(), None)
+        handler(BASE_EVENT.copy(), None)
 
         assert sm.get_secret_value.call_count == 1
 
     @patch.dict(os.environ, ENV)
     @patch("writer.article_handler.boto3.resource")
     @patch("writer.article_handler.boto3.client")
-    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
-    def test_custom_topic_skips_pool_fetch_and_consume(self, mock_gen, mock_boto_client, mock_boto_resource):
-        """Custom topic path: no DynamoDB topic fetch, no topic deletion."""
-        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
-        mock_boto_client.side_effect = _boto_client_factory()
-        mock_boto_resource.return_value = ddb
-
-        from writer.article_handler import handler
-        result = handler({"userId": "user1", "customTopic": "quantum computing"}, None)
-
-        assert result == {"articleId": "abc12", "userId": "user1", "articleTitle": "Load Balancers"}
-        # custom topic used verbatim — no topic pool read or write
-        topics_table.get_item.assert_not_called()
-        topics_table.update_item.assert_not_called()
-        # article still saved normally
-        articles_table.put_item.assert_called_once()
-        inbox_table.put_item.assert_called_once()
-        # generate_article called with the custom topic text
-        mock_gen.assert_called_once_with(topic="quantum computing", article_instructions=mock_gen.call_args.kwargs["article_instructions"], user_tastes=mock_gen.call_args.kwargs["user_tastes"])
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
-    def test_random_topic_path_unchanged(self, mock_gen, mock_boto_client, mock_boto_resource):
-        """Without customTopic the handler picks and consumes a topic from the pool."""
-        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
-        mock_boto_client.side_effect = _boto_client_factory()
-        mock_boto_resource.return_value = ddb
-
-        from writer.article_handler import handler
-        result = handler({"userId": "user1"}, None)
-
-        assert result["articleId"] == "abc12"
-        topics_table.get_item.assert_called_once()
-        topics_table.update_item.assert_called_once()
-        articles_table.put_item.assert_called_once()
-        inbox_table.put_item.assert_called_once()
-
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    @patch("writer.article_handler.generate_follow_up_article", return_value=SAMPLE_ARTICLE.copy())
+    @patch("writer.article_handler.generate_follow_up_article", return_value={**SAMPLE_ARTICLE})
     def test_follow_up_happy_path(self, mock_follow_up, mock_boto_client, mock_boto_resource):
-        """Follow-up path: skips topic pool, loads original article and user tastes, saves with sourceArticleId."""
-        ddb, topics_table, articles_table, inbox_table = _make_ddb_resource()
+        """Follow-up path: loads original HTML, saves with sourceArticleId and further_reading."""
+        ddb, articles_table, inbox_table = _make_ddb_resource()
         articles_table.get_item.return_value = {"Item": {"articleId": "orig-abc", "html": ORIGINAL_HTML}}
         mock_boto_client.side_effect = _boto_client_factory()
         mock_boto_resource.return_value = ddb
@@ -342,22 +312,26 @@ class TestArticleHandler:
         from writer.article_handler import handler
         result = handler({
             "userId": "user1",
+            "articleId": "abc12",
+            "articleTopic": "Original Article — focus on costs",
             "followUpArticleId": "orig-abc",
-            "followUpExtraContext": "focus on costs",
+            "extraContent": "focus on costs",
+            "tavilyResults": SAMPLE_TAVILY,
         }, None)
 
-        assert result == {"articleId": "abc12", "userId": "user1", "articleTitle": "Load Balancers"}
-        # Topic pool not touched
-        topics_table.get_item.assert_not_called()
-        topics_table.update_item.assert_not_called()
-        # generate_follow_up_article called with original HTML, extra context, user tastes, instructions
-        mock_follow_up.assert_called_once_with(
-            ORIGINAL_HTML, "focus on costs", "# User Tastes", "# Follow-up Instructions"
-        )
-        # articles_table saved with sourceArticleId
+        assert result == {"articleId": "abc12", "userId": "user1", "articleTopic": "Original Article — focus on costs", "articleTitle": "Load Balancers"}
+        mock_follow_up.assert_called_once()
+        call_kwargs = mock_follow_up.call_args
+        assert call_kwargs.args[0] == "abc12"       # article_id
+        assert call_kwargs.args[1] == ORIGINAL_HTML  # original_html
+        assert call_kwargs.args[2] == "focus on costs"  # extra_content
+        assert "# Article Instructions" in call_kwargs.args[4]
+        assert "# Follow-up Instructions" in call_kwargs.args[4]
+
         art_item = articles_table.put_item.call_args.kwargs["Item"]
         assert art_item["sourceArticleId"] == "orig-abc"
-        # inbox saved normally (no sourceArticleId)
+        assert art_item["further_reading"] != "[]"
+
         inbox_item = inbox_table.put_item.call_args.kwargs["Item"]
         assert "sourceArticleId" not in inbox_item
 
@@ -365,9 +339,8 @@ class TestArticleHandler:
     @patch("writer.article_handler.boto3.resource")
     @patch("writer.article_handler.boto3.client")
     def test_follow_up_original_article_not_found_raises(self, mock_boto_client, mock_boto_resource):
-        """Missing original article raises and logs error."""
-        ddb, _, articles_table, _ = _make_ddb_resource()
-        articles_table.get_item.return_value = {}  # no Item — get_item is called via ddb.Table()
+        ddb, articles_table, _ = _make_ddb_resource()
+        articles_table.get_item.return_value = {}
         mock_boto_client.side_effect = _boto_client_factory()
         mock_boto_resource.return_value = ddb
 
@@ -376,69 +349,26 @@ class TestArticleHandler:
             with pytest.raises(ValueError, match="article not found"):
                 handler({
                     "userId": "user1",
+                    "articleId": "abc12",
+                    "articleTopic": "topic",
                     "followUpArticleId": "missing-id",
-                    "followUpExtraContext": "context",
+                    "extraContent": "context",
                 }, None)
         error_spy.assert_called()
 
     @patch.dict(os.environ, ENV)
     @patch("writer.article_handler.boto3.resource")
     @patch("writer.article_handler.boto3.client")
-    def test_follow_up_user_tastes_load_failure_raises(self, mock_boto_client, mock_boto_resource):
-        """Failure loading user_tastes.md raises and logs error."""
-        ddb, _, articles_table, _ = _make_ddb_resource()
-        articles_table.get_item.return_value = {"Item": {"articleId": "orig-abc", "html": ORIGINAL_HTML}}  # get_item via ddb.Table()
-
-        def _s3_no_tastes(Bucket, Key):
-            content = {
-                "shared/follow_up_article_instructions.txt": b"# Follow-up Instructions",
-            }.get(Key)
-            if content is None:
-                raise Exception(f"unexpected key: {Key}")
-            body = MagicMock()
-            body.read.return_value = content
-            return {"Body": body}
-
-        s3 = MagicMock()
-        s3.get_object.side_effect = _s3_no_tastes
-        mock_boto_client.side_effect = _boto_client_factory(s3=s3)
+    @patch("writer.article_handler.generate_article", side_effect=_fake_generate_article)
+    def test_no_topics_table_access(self, mock_gen, mock_boto_client, mock_boto_resource):
+        """article_handler no longer accesses TOPICS_TABLE."""
+        ddb, _, _ = _make_ddb_resource()
+        mock_boto_client.side_effect = _boto_client_factory()
         mock_boto_resource.return_value = ddb
 
-        with patch("writer.article_handler.logger.error") as error_spy:
-            from writer.article_handler import handler
-            with pytest.raises(Exception):
-                handler({
-                    "userId": "user1",
-                    "followUpArticleId": "orig-abc",
-                    "followUpExtraContext": "context",
-                }, None)
-        error_spy.assert_called()
+        from writer.article_handler import handler
+        handler(BASE_EVENT.copy(), None)
 
-    @patch.dict(os.environ, ENV)
-    @patch("writer.article_handler.boto3.resource")
-    @patch("writer.article_handler.boto3.client")
-    def test_follow_up_instructions_load_failure_raises(self, mock_boto_client, mock_boto_resource):
-        """Failure loading follow_up_article_instructions.txt raises and logs error."""
-        ddb, _, articles_table, _ = _make_ddb_resource()
-
-        def _s3_no_follow_up_instructions(Bucket, Key):
-            if Key == "shared/article_generation_instructions.txt":
-                body = MagicMock()
-                body.read.return_value = b"# Article Instructions"
-                return {"Body": body}
-            raise Exception(f"unexpected key: {Key}")
-
-        s3 = MagicMock()
-        s3.get_object.side_effect = _s3_no_follow_up_instructions
-        mock_boto_client.side_effect = _boto_client_factory(s3=s3)
-        mock_boto_resource.return_value = ddb
-
-        with patch("writer.article_handler.logger.error") as error_spy:
-            from writer.article_handler import handler
-            with pytest.raises(Exception):
-                handler({
-                    "userId": "user1",
-                    "followUpArticleId": "orig-abc",
-                    "followUpExtraContext": "context",
-                }, None)
-        error_spy.assert_called()
+        # Table factory is only called for ARTICLES_TABLE and USER_INBOX_TABLE
+        table_names = [call.args[0] for call in ddb.Table.call_args_list]
+        assert "pulseq-topics" not in table_names

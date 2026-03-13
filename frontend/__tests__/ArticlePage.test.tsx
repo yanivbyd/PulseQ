@@ -10,6 +10,7 @@ const ARTICLE = {
   title: "How Load Balancers Work",
   html: '<div class="header-card"><h1>How Load Balancers Work</h1></div>',
   quiz: [],
+  further_reading: [],
 };
 
 const renderPage = (articleId = "abc12") =>

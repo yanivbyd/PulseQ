@@ -4,7 +4,25 @@ PulseQ is an autonomous, modular AI system that delivers a daily personalized te
 
 ## Writer Agent
 
-The Writer agent runs as an AWS Lambda. It reads input files from S3, calls GPT-4o, stores the article in DynamoDB, and sends an iOS push notification with the article URL.
+The Writer agent is an AWS Step Functions pipeline of five Lambdas that runs daily. It selects a topic, searches for real blog posts via Tavily, calls GPT-4o, stores the article in DynamoDB, and sends an iOS push notification.
+
+### Pipeline
+
+```
+TopicSelector → Tavily → Article → Quiz → Notification
+```
+
+| Step          | Lambda                    | Purpose                                          |
+|---------------|---------------------------|--------------------------------------------------|
+| TopicSelector | `topic_selector_handler`  | Picks a topic, generates `articleId`             |
+| Tavily        | `tavily_handler`          | Searches for real blog posts via Tavily API      |
+| Article       | `article_handler`         | Generates article HTML with GPT-4o, stores in DDB |
+| Quiz          | `quiz_handler`            | Generates quiz questions from the article        |
+| Notification  | `notification_handler`    | Sends iOS push notification                      |
+
+Each article is stored with a `further_reading` field — a list of `{ url, title }` links sourced from Tavily (not hallucinated by the LLM).
+
+Each Lambda receives and returns a typed `WorkflowState` (defined in `writer/workflow_state.py`), which carries all pipeline fields through the Step Functions execution. Optional fields absent at a given stage are stripped before forwarding to the next step. The backend uses `WorkflowInputState` (`backend/workflow_input_state.ts`) — the input-only subset — when starting a new execution.
 
 ### Trigger
 
@@ -108,6 +126,11 @@ aws secretsmanager put-secret-value \
   --secret-id pulseq/ifttt-key \
   --secret-string "your-ifttt-webhook-key" \
   --region eu-west-1
+
+aws secretsmanager put-secret-value \
+  --secret-id pulseq/tavily-api-key \
+  --secret-string "tvly-..." \
+  --region eu-west-1
 ```
 
 Upload input files to S3:
@@ -164,7 +187,7 @@ cd frontend && npm test
 - **Hosting**: CloudFront — unified distribution for SPA (`/*`) and JSON API (`/api/*`)
 - **Storage**: DynamoDB (`pulseq-articles`), S3 (`pulseq-inputs`, `pulseq-frontend`)
 - **IaC**: AWS CDK (Python), region `eu-west-1`
-- **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`, `pulseq/ifttt-key`)
+- **Secrets**: AWS Secrets Manager (`pulseq/openai-api-key`, `pulseq/ifttt-key`, `pulseq/tavily-api-key`)
 - **Notifications**: IFTTT Webhooks → IFTTT iPhone app
 
 ## iOS Push Notifications

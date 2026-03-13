@@ -9,8 +9,10 @@ import boto3
 # In tests writer/ is a package, so fall back to the submodule import.
 try:
     from handler_utils import AWS_REGION
+    from workflow_state import WorkflowState
 except ImportError:
     from writer.handler_utils import AWS_REGION  # type: ignore[no-redef]
+    from writer.workflow_state import WorkflowState  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +50,14 @@ def send_ifttt_notification(article_url: str, article_title: str) -> None:
 
 
 def handler(event, context):
-    article_id = event.get("articleId")
-    user_id = event.get("userId")
-    article_title = event.get("articleTitle")
-    if not article_id or not user_id or not article_title:
+    state = WorkflowState.from_event(event)
+
+    if not state.articleId or not state.userId or not state.articleTitle:
         logger.error("notification-handler: missing articleId, userId, or articleTitle in event")
         raise ValueError("articleId, userId, and articleTitle are required")
 
     web_base = os.environ["WEB_BASE_URL"]
-    warm_up_cache(f"{web_base}/api/article/{article_id}")
-    send_ifttt_notification(f"{web_base}/{article_id}", article_title)
+    warm_up_cache(f"{web_base}/api/article/{state.articleId}")
+    send_ifttt_notification(f"{web_base}/{state.articleId}", state.articleTitle)
 
     return {}

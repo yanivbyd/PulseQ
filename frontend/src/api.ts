@@ -19,11 +19,17 @@ export interface QuizQuestion {
   answer: number;
 }
 
+export interface FurtherReadingItem {
+  url: string;
+  title: string;
+}
+
 export interface Article {
   articleId: string;
   title: string;
   html: string;
   quiz: QuizQuestion[];
+  further_reading: FurtherReadingItem[];
 }
 
 export async function fetchArticleSummaries(userId: string): Promise<ArticleSummary[]> {

@@ -9,6 +9,7 @@ from writer.writer import generate_short_id, generate_quiz, generate_article, ge
 # ── Constants ────────────────────────────────────────────────────────────────
 
 HTML_FRAGMENT = (
+    "<title>Test Article</title>\n"
     "<style>:root { --accent: #0d9488; }</style>\n"
     "<div class=\"header-card\"><h1>Test Article</h1></div>"
 )
@@ -126,32 +127,56 @@ def test_generate_quiz_validation_failures_fall_back_to_empty(caplog):
 # ── generate_article() ───────────────────────────────────────────────────────
 
 def test_happy_path(mock_openai):
-    """generate_article() returns a dict with id, html, title, and accent (no quiz)."""
+    """generate_article() returns a dict with the provided article_id, html, title, and accent."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = generate_article(topic="N+1 Queries — Detection patterns.",
-                                  article_instructions="Style instructions.",
-                                  user_tastes="prefers concise")
+        result = generate_article(
+            article_id="myid1",
+            topic="N+1 Queries — Detection patterns.",
+            article_instructions="Style instructions.",
+            user_tastes="prefers concise",
+        )
 
+    assert result["id"] == "myid1"
     assert result["html"] == HTML_FRAGMENT
     assert result["title"] == "Test Article"
     assert result["accent"] == "#0d9488"
-    assert len(result["id"]) == 5
-    assert result["id"].isalnum()
     assert "quiz" not in result
 
 
 def test_topic_included_in_prompt(mock_openai):
-    """Topic string is passed verbatim to the OpenAI article prompt; no history section."""
+    """Topic string is passed verbatim to the OpenAI article prompt."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        generate_article(topic="My Topic", article_instructions="Instructions", user_tastes="tastes")
+        generate_article(article_id="x1", topic="My Topic", article_instructions="Instructions", user_tastes="tastes")
 
     messages = mock_openai.chat.completions.create.call_args_list[0].kwargs["messages"]
     assert "tastes" in messages[1]["content"]
     assert "USER TASTES" in messages[1]["content"]
     assert "My Topic" in messages[2]["content"]
-    assert "HISTORY" not in messages[2]["content"]
+
+
+def test_tavily_results_appended_to_prompt(mock_openai):
+    """When tavily_results is provided, it is appended as a user message."""
+    tavily = {"results": [{"url": "https://ex.com", "title": "T"}], "images": []}
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        generate_article(article_id="x1", topic="Topic", article_instructions="I", user_tastes="t", tavily_results=tavily)
+
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert any("FURTHER READING SOURCES" in m["content"] for m in messages)
+    assert any("https://ex.com" in m["content"] for m in messages)
+
+
+def test_no_tavily_results_no_extra_message(mock_openai):
+    """When tavily_results is None, no further reading message is added."""
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        generate_article(article_id="x1", topic="Topic", article_instructions="I", user_tastes="t")
+
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert not any("FURTHER READING" in m["content"] for m in messages)
+    assert len(messages) == 3
 
 
 def test_missing_api_key():
@@ -159,7 +184,7 @@ def test_missing_api_key():
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            generate_article(topic="T", article_instructions="I", user_tastes="t")
+            generate_article(article_id="x", topic="T", article_instructions="I", user_tastes="t")
 
 
 def test_short_id_format():
@@ -182,31 +207,44 @@ def test_openai_error_propagates():
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            generate_article(topic="T", article_instructions="I", user_tastes="t")
+            generate_article(article_id="x", topic="T", article_instructions="I", user_tastes="t")
 
 
 def test_accent_fallback():
     """When HTML has no --accent, accent defaults to #5b5ef4."""
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content="<h1>No style</h1>"))]
+        choices=[MagicMock(message=MagicMock(content="<title>No style</title><p>content</p>"))]
     )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = generate_article(topic="T", article_instructions="I", user_tastes="t")
+        result = generate_article(article_id="x", topic="T", article_instructions="I", user_tastes="t")
 
     assert result["accent"] == "#5b5ef4"
 
 
+def test_title_from_title_tag():
+    """Title is extracted from <title> tag."""
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="<title>My Custom Title</title><p>body</p>"))]
+    )
+    with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        result = generate_article(article_id="x", topic="T", article_instructions="I", user_tastes="t")
+
+    assert result["title"] == "My Custom Title"
+
+
 def test_title_fallback():
-    """When HTML has no h1, title defaults to 'New Article'."""
+    """When HTML has no <title>, title defaults to 'New Article'."""
     mock_client = MagicMock()
     mock_client.chat.completions.create.return_value = MagicMock(
         choices=[MagicMock(message=MagicMock(content="<p>No heading</p>"))]
     )
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        result = generate_article(topic="T", article_instructions="I", user_tastes="t")
+        result = generate_article(article_id="x", topic="T", article_instructions="I", user_tastes="t")
 
     assert result["title"] == "New Article"
 
@@ -214,29 +252,31 @@ def test_title_fallback():
 # ── generate_follow_up_article() ─────────────────────────────────────────────
 
 def test_follow_up_happy_path(mock_openai):
-    """generate_follow_up_article() returns dict with id, html, title, and accent."""
+    """generate_follow_up_article() returns dict with the provided article_id, html, title, and accent."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         result = generate_follow_up_article(
+            article_id="fu001",
             original_html="<p>original</p>",
-            follow_up_extra_context="focus on costs",
+            extra_content="focus on costs",
             user_tastes="prefers concise",
             instructions="Follow-up instructions.",
         )
 
+    assert result["id"] == "fu001"
     assert result["html"] == HTML_FRAGMENT
     assert result["title"] == "Test Article"
     assert result["accent"] == "#0d9488"
-    assert len(result["id"]) == 5
 
 
 def test_follow_up_sends_correct_messages(mock_openai):
-    """generate_follow_up_article sends system instructions and three user messages in order."""
+    """generate_follow_up_article sends system instructions and user messages in order."""
     with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         generate_follow_up_article(
+            article_id="fu001",
             original_html="<p>orig html</p>",
-            follow_up_extra_context="deep dive on costs",
+            extra_content="deep dive on costs",
             user_tastes="likes bullet points",
             instructions="my instructions",
         )
@@ -254,12 +294,30 @@ def test_follow_up_sends_correct_messages(mock_openai):
     assert "ORIGINAL ARTICLE" in messages[3]["content"]
 
 
+def test_follow_up_tavily_appended(mock_openai):
+    """When tavily_results is provided, it is appended as a user message."""
+    tavily = {"results": [{"url": "https://ex.com", "title": "T"}], "images": []}
+    with patch("writer.writer.openai.OpenAI", return_value=mock_openai), \
+         patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+        generate_follow_up_article(
+            article_id="fu001",
+            original_html="<p>orig</p>",
+            extra_content="ctx",
+            user_tastes="tastes",
+            instructions="instr",
+            tavily_results=tavily,
+        )
+
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert any("FURTHER READING SOURCES" in m["content"] for m in messages)
+
+
 def test_follow_up_missing_api_key():
     """Missing OPENAI_API_KEY raises EnvironmentError before any API call."""
     env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(EnvironmentError):
-            generate_follow_up_article("<p>orig</p>", "ctx", "tastes", "instr")
+            generate_follow_up_article("x", "<p>orig</p>", "ctx", "tastes", "instr")
 
 
 def test_follow_up_openai_error_propagates():
@@ -269,4 +327,4 @@ def test_follow_up_openai_error_propagates():
     with patch("writer.writer.openai.OpenAI", return_value=mock_client), \
          patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
         with pytest.raises(openai.OpenAIError):
-            generate_follow_up_article("<p>orig</p>", "ctx", "tastes", "instr")
+            generate_follow_up_article("x", "<p>orig</p>", "ctx", "tastes", "instr")

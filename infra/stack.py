@@ -11,12 +11,12 @@ from aws_cdk import (
     aws_iam as iam,
     aws_s3 as s3,
     aws_scheduler as scheduler,
-    aws_secretsmanager as sm,
 )
 from constructs import Construct
 
 from ddb_stack import create_ddb_tables
 from lambdas_stack import create_lambdas
+from secrets_stack import create_secrets
 from writer_pipeline_stack import create_writer_pipeline
 
 
@@ -45,18 +45,7 @@ class WriterStack(Stack):
         ddb_tables = create_ddb_tables(self)
 
         # ── Secrets Manager ─────────────────────────────────────────────────
-        secret = sm.Secret(
-            self,
-            "OpenAIApiKey",
-            secret_name="pulseq/openai-api-key",
-            description="OpenAI API key",
-        )
-
-        ifttt_secret = sm.Secret.from_secret_name_v2(
-            self,
-            "IftttKey",
-            "pulseq/ifttt-key",
-        )
+        secrets = create_secrets(self)
 
         # ── S3: events (user feedback and future UI events) ──────────────────
         events_bucket = s3.Bucket(
@@ -73,13 +62,14 @@ class WriterStack(Stack):
             input_bucket=input_bucket,
             events_bucket=events_bucket,
             ddb_tables=ddb_tables,
-            secret=secret,
-            ifttt_secret=ifttt_secret,
+            secrets=secrets,
         )
 
         # ── Step Functions: WriterStateMachine ───────────────────────────────
         writer_state_machine = create_writer_pipeline(
             self,
+            topic_selector_fn=lambdas.topic_selector_fn,
+            tavily_fn=lambdas.tavily_fn,
             article_fn=lambdas.article_fn,
             quiz_fn=lambdas.quiz_fn,
             notification_fn=lambdas.notification_fn,

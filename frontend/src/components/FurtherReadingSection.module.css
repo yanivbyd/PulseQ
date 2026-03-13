@@ -1,0 +1,51 @@
+.container {
+  max-width: 680px;
+  margin: 1.5rem auto 0;
+  padding: 0 1rem;
+}
+
+.card {
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 1rem;
+}
+
+.icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.item {
+  font-size: 0.875rem;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: none;
+  line-height: 1.45;
+}
+
+.link:hover {
+  text-decoration: underline;
+}

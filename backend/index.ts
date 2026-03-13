@@ -4,6 +4,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
+import type { WorkflowInputState } from "./workflow_input_state";
 
 function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyStructuredResultV2 {
   return {
@@ -65,11 +66,11 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
       }
     }
 
-    const sfnInput: Record<string, string> = { userId: genUserId };
+    const sfnInput: WorkflowInputState = { userId: genUserId };
     if (customTopic !== undefined) sfnInput.customTopic = customTopic as string;
     if (followUpArticleId !== undefined) {
       sfnInput.followUpArticleId = followUpArticleId as string;
-      sfnInput.followUpExtraContext = followUpExtraContext as string;
+      sfnInput.extraContent = followUpExtraContext as string;
     }
 
     try {
@@ -149,7 +150,17 @@ export function createHandler(ddbClient: DynamoDBDocumentClient, lambdaClient: L
         console.warn(`article: invalid quiz JSON for articleId=${articleId}`);
       }
     }
-    return jsonResponse(200, { articleId: item.articleId, title: item.title, html: item.html, quiz });
+    let further_reading: unknown[] = [];
+    if (typeof item.further_reading === "string") {
+      try {
+        const parsed = JSON.parse(item.further_reading);
+        if (Array.isArray(parsed)) further_reading = parsed;
+        else console.warn(`article: further_reading field is not an array for articleId=${articleId}`);
+      } catch {
+        console.warn(`article: invalid further_reading JSON for articleId=${articleId}`);
+      }
+    }
+    return jsonResponse(200, { articleId: item.articleId, title: item.title, html: item.html, quiz, further_reading });
   }
 
   async function handleMarkRead(body: string | undefined): Promise<APIGatewayProxyStructuredResultV2> {

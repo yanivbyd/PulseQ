@@ -10,9 +10,11 @@ import openai
 try:
     from writer import generate_quiz  # Lambda environment
     from handler_utils import AWS_REGION, get_openai_api_key, s3_get_text
+    from workflow_state import WorkflowState
 except ImportError:
     from writer.writer import generate_quiz  # type: ignore[no-redef]  # Test environment
     from writer.handler_utils import AWS_REGION, get_openai_api_key, s3_get_text  # type: ignore[no-redef]
+    from writer.workflow_state import WorkflowState  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +62,9 @@ def save_quiz(articles_table, article_id: str, quiz: list) -> None:
 
 
 def handler(event, context):
-    article_id = event.get("articleId")
-    user_id = event.get("userId")
-    if not article_id or not user_id:
+    state = WorkflowState.from_event(event)
+
+    if not state.articleId or not state.userId:
         logger.error("quiz-handler: missing articleId or userId in event")
         raise ValueError("articleId and userId are required")
 
@@ -72,11 +74,14 @@ def handler(event, context):
     ddb = boto3.resource("dynamodb", region_name=AWS_REGION)
     articles_table = ddb.Table(os.environ["ARTICLES_TABLE"])
 
-    html = load_article_html(articles_table, article_id)
-    quiz_prompt = load_quiz_prompt(s3, os.environ["INPUT_BUCKET"], user_id)
+    html = load_article_html(articles_table, state.articleId)
+    quiz_prompt = load_quiz_prompt(s3, os.environ["INPUT_BUCKET"], state.userId)
 
     quiz = generate_quiz(openai.OpenAI(api_key=api_key), html, quiz_prompt)
-    save_quiz(articles_table, article_id, quiz)
+    save_quiz(articles_table, state.articleId, quiz)
 
-    article_title = event.get("articleTitle")
-    return {"articleId": article_id, "userId": user_id, "articleTitle": article_title}
+    return WorkflowState(
+        userId=state.userId,
+        articleId=state.articleId,
+        articleTitle=state.articleTitle,
+    ).to_dict()

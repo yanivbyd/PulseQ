@@ -11,31 +11,34 @@ from constructs import Construct
 
 def create_writer_pipeline(
     scope: Construct,
+    topic_selector_fn: _lambda.Function,
+    tavily_fn: _lambda.Function,
     article_fn: _lambda.Function,
     quiz_fn: _lambda.Function,
     notification_fn: _lambda.Function,
 ) -> sfn.StateMachine:
     workflow_end = sfn.Succeed(scope, "WorkflowEnd")
+    workflow_fail = sfn.Fail(scope, "WorkflowFail", cause="Pipeline step failed")
 
-    notification_state = tasks.LambdaInvoke(
+    notification = tasks.LambdaInvoke(
         scope,
-        "NotificationState",
+        "Notification",
         lambda_function=notification_fn,
         result_path=sfn.JsonPath.DISCARD,
     )
-    notification_state.add_catch(
+    notification.add_catch(
         handler=workflow_end,
         errors=["States.ALL"],
         result_path=sfn.JsonPath.DISCARD,
     )
 
-    quiz_state = tasks.LambdaInvoke(
+    quiz = tasks.LambdaInvoke(
         scope,
-        "QuizState",
+        "Quiz",
         lambda_function=quiz_fn,
         payload_response_only=True,
     )
-    quiz_state.add_retry(
+    quiz.add_retry(
         errors=[
             "Lambda.ServiceException",
             "Lambda.AWSLambdaException",
@@ -46,19 +49,19 @@ def create_writer_pipeline(
         backoff_rate=2,
         interval=Duration.seconds(1),
     )
-    quiz_state.add_catch(
-        handler=notification_state,
+    quiz.add_catch(
+        handler=notification,
         errors=["States.ALL"],
         result_path=sfn.JsonPath.DISCARD,
     )
 
-    article_state = tasks.LambdaInvoke(
+    article = tasks.LambdaInvoke(
         scope,
-        "ArticleState",
+        "Article",
         lambda_function=article_fn,
         payload_response_only=True,
     )
-    article_state.add_retry(
+    article.add_retry(
         errors=[
             "Lambda.ServiceException",
             "Lambda.AWSLambdaException",
@@ -68,6 +71,52 @@ def create_writer_pipeline(
         max_attempts=2,
         backoff_rate=2,
         interval=Duration.seconds(1),
+    )
+
+    tavily = tasks.LambdaInvoke(
+        scope,
+        "Tavily",
+        lambda_function=tavily_fn,
+        payload_response_only=True,
+    )
+    tavily.add_retry(
+        errors=[
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+        ],
+        max_attempts=2,
+        backoff_rate=2,
+        interval=Duration.seconds(1),
+    )
+    tavily.add_catch(
+        handler=article,
+        errors=["States.ALL"],
+        result_path=sfn.JsonPath.DISCARD,
+    )
+
+    topic_selector = tasks.LambdaInvoke(
+        scope,
+        "TopicSelector",
+        lambda_function=topic_selector_fn,
+        payload_response_only=True,
+    )
+    topic_selector.add_retry(
+        errors=[
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+        ],
+        max_attempts=2,
+        backoff_rate=2,
+        interval=Duration.seconds(1),
+    )
+    topic_selector.add_catch(
+        handler=workflow_fail,
+        errors=["States.ALL"],
+        result_path=sfn.JsonPath.DISCARD,
     )
 
     log_group = logs.LogGroup(
@@ -83,7 +132,7 @@ def create_writer_pipeline(
         "WriterStateMachine",
         state_machine_name="article-generation",
         definition_body=sfn.DefinitionBody.from_chainable(
-            article_state.next(quiz_state).next(notification_state).next(workflow_end)
+            topic_selector.next(tavily).next(article).next(quiz).next(notification).next(workflow_end)
         ),
         state_machine_type=sfn.StateMachineType.EXPRESS,
         timeout=Duration.minutes(5),

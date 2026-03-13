@@ -264,8 +264,12 @@ describe("GET /api/article/:articleId", () => {
     process.env.USER_INBOX_TABLE = "pulseq-user-inbox";
   });
 
-  test("returns full article JSON including parsed quiz array via GetItem", async () => {
-    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+  test("returns full article JSON including parsed quiz and further_reading arrays via GetItem", async () => {
+    const articleWithFurtherReading = {
+      ...SAMPLE_ARTICLE,
+      further_reading: JSON.stringify([{ url: "https://example.com", title: "Example" }]),
+    };
+    const result = await createHandler(makeMockDdb({ [SAMPLE_ARTICLE_ID]: articleWithFurtherReading }, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
       makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
     ) as APIGatewayProxyStructuredResultV2;
     expect(result.statusCode).toBe(200);
@@ -274,7 +278,28 @@ describe("GET /api/article/:articleId", () => {
     expect(body.title).toBe("How Load Balancers Work");
     expect(body.html).toBe(SAMPLE_ARTICLE.html);
     expect(body.quiz).toEqual(SAMPLE_QUIZ);
+    expect(body.further_reading).toEqual([{ url: "https://example.com", title: "Example" }]);
     expect(body.userId).toBeUndefined(); // internal field not exposed
+  });
+
+  test("returns further_reading: [] when DDB further_reading field is absent", async () => {
+    const result = await createHandler(makeMockDdb(MOCK_ARTICLES, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body as string).further_reading).toEqual([]);
+  });
+
+  test("returns further_reading: [] and warns when DDB further_reading field contains invalid JSON", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const articleBadFR = { ...SAMPLE_ARTICLE, further_reading: "not valid json" };
+    const result = await createHandler(makeMockDdb({ [SAMPLE_ARTICLE_ID]: articleBadFR }, MOCK_INBOX), mockLambda, mockS3, mockSfn)(
+      makeGatewayEvent(`/api/article/${SAMPLE_ARTICLE_ID}`),
+    ) as APIGatewayProxyStructuredResultV2;
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body as string).further_reading).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("invalid further_reading JSON"));
+    warnSpy.mockRestore();
   });
 
   test("returns quiz: [] when DDB quiz field is absent", async () => {
@@ -451,7 +476,7 @@ describe("POST /api/generate", () => {
     expect(result.statusCode).toBe(404);
   });
 
-  test("forwards followUpArticleId and followUpExtraContext in state machine input", async () => {
+  test("forwards followUpArticleId and followUpExtraContext (as extraContent) in state machine input", async () => {
     const sfn = makeMockSfn();
     const result = await createHandler(makeMockDdb({}), mockLambda, mockS3, sfn)(
       makeGatewayEvent("/api/generate", undefined, "POST", JSON.stringify({
@@ -465,7 +490,7 @@ describe("POST /api/generate", () => {
     expect(JSON.parse(cmd.input.input!)).toEqual({
       userId: "user1",
       followUpArticleId: "orig-abc",
-      followUpExtraContext: "focus on costs",
+      extraContent: "focus on costs",
     });
   });
 
