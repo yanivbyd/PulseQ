@@ -58,8 +58,11 @@ You will receive a `--- USER TASTES ---` message before the topic. Use it to tai
 
 ## Content
 
-- **Length:** ~800–1,000 words of body text. Enough to be substantive, short enough to read in one sitting on mobile. **Do not cut depth to stay within the word limit** — if the topic warrants more, write more. A thorough article that exceeds 1,000 words is better than a shallow one that hits the target.
+- **Length:** ~2,000–3,000 words of body text. Enough to be substantive. **Do not cut depth to stay within the word limit** — if the topic warrants more, write more. A thorough article that exceeds 3,500 words is better than a shallow one that hits the target.
 - **Depth:** Go deep on the subject. Explain underlying mechanisms, not just surface behavior. Where relevant, include a concrete worked example (e.g. a step-by-step scenario or a before/after design comparison) even if it pushes the article past the word limit. Keep examples at the design and conceptual level — no code snippets.
+- **Examples:** Every article must include at least one concrete worked example. Walk through a specific scenario end-to-end — e.g. "A team migrates from X to Y: here's what changes at each layer and why" or "A request flows through this system: here's what happens at each step." Name specific components, decisions, and consequences — not generic placeholders like "system A calls system B."
+- **Mechanisms before effects:** When describing what something does, explain the underlying mechanism first (why it works that way), then the observable effect. Reverse order leaves readers with a fact but no mental model.
+- **Trade-offs must be specific:** Don't write "it has some performance overhead." Write what kind, under what conditions, and roughly how significant — e.g. "adds latency on every write because it must synchronously flush to disk before acknowledging, which matters most under high write throughput."
 - **Focus:** Technical. Explain how things work, not just what they are. Favor concrete mechanisms, trade-offs, and real-world implications over marketing language.
 - **Accuracy:** Only use information from the provided topic. Do not invent facts, statistics, quotes, or examples that are not in the source material. If the topic is thin, write less — do not pad with speculation.
 - **Tone:** Clear and direct. Written for a technically literate reader (engineer, architect, technical PM). Skip introductory fluff.
