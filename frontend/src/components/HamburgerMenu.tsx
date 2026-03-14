@@ -42,8 +42,7 @@ export default function HamburgerMenu({ className, floating }: { className?: str
       </button>
       {open && (
         <nav className={styles.menu}>
-          <div className={styles.menuHeader}>Navigate</div>
-          {NAV_LINKS.map((link) => (
+{NAV_LINKS.map((link) => (
             <Link
               key={link.to}
               to={link.to}
